@@ -210,6 +210,37 @@ class Hole:
     def draw(self):
         pygame.draw.circle(screen, BLACK, (int(self.x), int(self.y)), self.radius)
 
+
+
+def difficulty_screen():
+    """
+    Screen for user to select difficulty level.
+    """
+    display_message = "Select Difficulty:"
+    draw_text(display_message, title_font, WHITE, 200, 100)
+    
+    easy_button = pygame.Rect(200, 400, 180, 50)
+    medium_button = pygame.Rect(200, 400, 180, 50)
+    hard_button = pygame.Rect(200, 400, 180, 50)
+    while True:
+        for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if easy_button.collidepoint(event.pos):
+                        return 1
+                    elif medium_button.collidepoint(event.pos):
+                        return 2
+                    elif hard_button.collidepoint(event.pos):
+                        return 3
+        
+        screen.fill(BLACK)
+        pygame.display.flip()
+        clock.tick(30)
+
+
 # --- Login/Register Screen ---
 
 def login_register_screen():
@@ -298,12 +329,13 @@ def login_register_screen():
 
 # --- Main Game Function ---
 
-def main_game(player_id, username):
+def main_game(player_id, username, difficulty_id):
     """
     The main game loop, translated from your C++ main().
     """
     
     # --- Game State Variables ---
+    # You can now use 'difficulty_id' to change game parameters
     game_over = False
     did_win = False
     show_message = False
@@ -584,8 +616,7 @@ def main_game(player_id, username):
     # --- End of Game Loop ---
     # Save the score
     if score > 0 or did_win:
-        # We'll use 1 for 'Easy' difficulty. You can change this.
-        save_game_session(player_id, 1, score, did_win)
+        save_game_session(player_id, difficulty_id, score, did_win)
     
     pygame.quit()
     sys.exit()
@@ -596,6 +627,9 @@ if __name__ == "__main__":
     # This loop won't exit until login is successful.
     player_id, username = login_register_screen()
     
-    # 2. Start the main game
-    print(f"Starting game for PlayerID: {player_id}, User: {username}")
-    main_game(player_id, username)
+    # 2. Show difficulty selection screen
+    difficulty_id = difficulty_screen()
+
+    # 3. Start the main game
+    print(f"Starting game for PlayerID: {player_id}, User: {username}, Difficulty: {difficulty_id}")
+    main_game(player_id, username, difficulty_id)
