@@ -3,23 +3,15 @@ import math
 import sys
 import auth  # This is your 'auth.py' file for login/registration
 import mysql.connector
-from mysql.connector import Error
-
-# --- Database Connection Details ---
-# (These must match your auth.py)
-DB_HOST = "localhost"
-DB_NAME = "pool_game_db"
-DB_USER = "root"
-DB_PASS = "roo123"  # <-- !!! CHANGE THIS to your MySQL password !!!
 
 # --- Pygame Setup ---
 pygame.init()
-pygame.mixer.init() # for sounds
+pygame.mixer.init()  # for sounds
 
-# Screen dimensions
-SCREEN_WIDTH = 920
-SCREEN_HEIGHT = 450
-TABLE_START_X = 225 # The left-side panel width
+# Screen dimensions (FIXED)
+SCREEN_WIDTH = 1500
+SCREEN_HEIGHT = 800
+TABLE_START_X = 375  # The left-side panel width (1500 // 4)
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("9-Ball Game (Database Project)")
 clock = pygame.time.Clock()
@@ -32,7 +24,7 @@ SKYBLUE = (135, 206, 235)
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)
-GREEN = (0, 128, 0) # Table color
+GREEN = (0, 128, 0)  # Table color
 BROWN = (139, 69, 19)
 YELLOW = (255, 255, 0)
 BLUE = (0, 0, 255)
@@ -41,10 +33,10 @@ ORANGE = (255, 165, 0)
 DARKGREEN = (0, 100, 0)
 PINK = (255, 192, 203)
 
-# --- Sound Setup (Commented out, add your own paths) ---
+# --- Sound Setup (Unchanged) ---
 try:
     bg_music = pygame.mixer.music.load("C:/Users/Administrator/source/repos/PONG1/bgm.mp3")
-    pygame.mixer.music.play(-1) # Loop forever
+    # pygame.mixer.music.play(-1)  # Loop forever <-- REMOVED, we will control this in the game loop
     collision_sound = pygame.mixer.Sound("C:/Users/Administrator/source/repos/PONG1/collision.wav")
     potting_sound = pygame.mixer.Sound("C:/Users/Administrator/source/repos/PONG1/ball_pocket.wav")
 except FileNotFoundError:
@@ -58,12 +50,44 @@ def play_sound(sound):
     """ Helper to safely play sounds """
     if sound:
         sound.play()
- 
+
 
 def draw_text(text, font, color, x, y):
     """ Helper to draw text on the screen """
     text_surface = font.render(text, True, color)
     screen.blit(text_surface, (x, y))
+
+# --- NEW: Text Wrapping Function ---
+def draw_text_wrapped(surface, text, font, color, rect):
+    """
+    Draws text, wrapping it to fit inside the given rect.
+    """
+    words = text.split(' ')
+    lines = []
+    current_line = ""
+
+    for word in words:
+        if word == "\n": # Handle manual newlines
+            lines.append(current_line)
+            lines.append("") # Add a blank line
+            current_line = ""
+            continue
+
+        test_line = current_line + word + " "
+        if font.size(test_line)[0] < rect.width:
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = word + " "
+    
+    lines.append(current_line) # Add the last line
+
+    y_offset = 0
+    for line in lines:
+        text_surface = font.render(line, True, color)
+        surface.blit(text_surface, (rect.x, rect.y + y_offset))
+        y_offset += font.get_linesize()
+
 
 def check_collision_circles(pos1, r1, pos2, r2):
     """ Replaces Raylib's CheckCollisionCircles """
@@ -104,28 +128,14 @@ def handle_collision(ball1, ball):
     ball.speedx += impulse * nx
     ball.speedy += impulse * ny
 
-# --- Database Functions (Replaces File I/O) ---
-
-def get_db_connection():
-    """ Helper function to create a database connection. """
-    try:
-        conn = mysql.connector.connect(
-            host=DB_HOST,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASS
-        )
-        return conn
-    except Error as e:
-        print(f"Error connecting to MySQL: {e}")
-        return None
+# --- Database Functions (Unchanged) ---
 
 def save_game_session(player_id, difficulty_id, score, did_win):
     """
     Saves the completed game to the database.
     This replaces updateScoresFile().
     """
-    conn = get_db_connection()
+    conn = auth.get_db_connection()  # Use the centralized connection function
     if conn is None:
         print("Could not save score. DB connection failed.")
         return
@@ -135,7 +145,7 @@ def save_game_session(player_id, difficulty_id, score, did_win):
         # 1. Create the GameSession
         sql_session = "INSERT INTO GameSession (DifficultyID) VALUES (%s)"
         cursor.execute(sql_session, (difficulty_id,))
-        game_session_id = cursor.lastrowid # Get the ID of the new session
+        game_session_id = cursor.lastrowid  # Get the ID of the new session
         
         # 2. Link the Player to the session
         sql_participant = """
@@ -147,8 +157,7 @@ def save_game_session(player_id, difficulty_id, score, did_win):
         
         conn.commit()
         print(f"Game session {game_session_id} saved for player {player_id} with score {score}.")
-
-    except Error as e:
+    except mysql.connector.Error as e:
         print(f"Database error saving game: {e}")
     finally:
         cursor.close()
@@ -159,7 +168,7 @@ def get_top_scores():
     Gets the top 5 scores from the database.
     This replaces getTopScore().
     """
-    conn = get_db_connection()
+    conn = auth.get_db_connection()  # Use the centralized connection function
     if conn is None:
         return []
 
@@ -177,7 +186,7 @@ def get_top_scores():
         cursor.execute(sql)
         top_scores = cursor.fetchall()
 
-    except Error as e:
+    except mysql.connector.Error as e:
         print(f"Database error getting top scores: {e}")
     finally:
         cursor.close()
@@ -212,56 +221,79 @@ class Hole:
 
 
 
+# --- NEW: Difficulty Select Screen (Updated) ---
 def difficulty_screen():
     """
     Screen for user to select difficulty level.
+    Uses fixed 1500x800 resolution.
     """
-    display_message = "Select Difficulty:"
-    draw_text(display_message, title_font, WHITE, 200, 100)
-    
-    easy_button = pygame.Rect(200, 400, 180, 50)
-    medium_button = pygame.Rect(200, 400, 180, 50)
-    hard_button = pygame.Rect(200, 400, 180, 50)
     while True:
-        for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if easy_button.collidepoint(event.pos):
-                        return 1
-                    elif medium_button.collidepoint(event.pos):
-                        return 2
-                    elif hard_button.collidepoint(event.pos):
-                        return 3
+        # --- Recalculate UI positions based on global SCREEN_WIDTH/HEIGHT ---
+        center_x = SCREEN_WIDTH // 2
+        button_width = 250
         
+        easy_button = pygame.Rect(center_x - button_width // 2, SCREEN_HEIGHT * 0.3, button_width, 70)
+        medium_button = pygame.Rect(center_x - button_width // 2, SCREEN_HEIGHT * 0.5, button_width, 70)
+        hard_button = pygame.Rect(center_x - button_width // 2, SCREEN_HEIGHT * 0.7, button_width, 70)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if easy_button.collidepoint(event.pos):
+                    return 1  # Corresponds to 'Easy' in your DB
+                elif medium_button.collidepoint(event.pos):
+                    return 2  # Corresponds to 'Medium'
+                elif hard_button.collidepoint(event.pos):
+                    return 3  # Corresponds to 'Hard'
+        
+        # --- Drawing the Difficulty Screen (Inside the loop) ---
         screen.fill(BLACK)
+        draw_text("Select Difficulty", title_font, WHITE, center_x - title_font.size("Select Difficulty")[0] // 2, SCREEN_HEIGHT * 0.1)
+        
+        # Draw Easy button
+        pygame.draw.rect(screen, GREEN, easy_button)
+        draw_text("Easy", title_font, BLACK, easy_button.x + 90, easy_button.y + 15)
+        
+        # Draw Medium button
+        pygame.draw.rect(screen, YELLOW, medium_button)
+        draw_text("Medium", title_font, BLACK, medium_button.x + 70, medium_button.y + 15)
+        
+        # Draw Hard button
+        pygame.draw.rect(screen, RED, hard_button)
+        draw_text("Hard", title_font, BLACK, hard_button.x + 90, hard_button.y + 15)
+        
         pygame.display.flip()
         clock.tick(30)
+        
 
 
-# --- Login/Register Screen ---
+# --- Login/Register Screen (Updated) ---
 
 def login_register_screen():
     """
     New screen to handle user login or registration.
-    Replaces getUsernameInput().
+    Uses fixed 1500x800 resolution.
     """
     username = ""
     password = ""
     message = "Enter Username & Password"
     active_field = "username" # "username", "password", "login"
     
-    input_box_user = pygame.Rect(200, 200, 400, 50)
-    input_box_pass = pygame.Rect(200, 300, 400, 50)
-    button_login = pygame.Rect(200, 400, 180, 50)
-    button_register = pygame.Rect(420, 400, 180, 50)
-    
     color_active = pygame.Color('dodgerblue2')
     color_inactive = pygame.Color('lightgray')
     
     while True:
+        # --- Recalculate UI based on global screen size ---
+        center_x = SCREEN_WIDTH // 2
+        
+        input_box_user = pygame.Rect(center_x - 200, SCREEN_HEIGHT * 0.3, 400, 50)
+        input_box_pass = pygame.Rect(center_x - 200, SCREEN_HEIGHT * 0.45, 400, 50)
+        button_login = pygame.Rect(center_x - 200, SCREEN_HEIGHT * 0.6, 180, 50)
+        button_register = pygame.Rect(center_x + 20, SCREEN_HEIGHT * 0.6, 180, 50)
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -276,21 +308,21 @@ def login_register_screen():
                     # --- Try to Login ---
                     print(f"Attempting login for: {username}")
                     result = auth.login_player(username, password)
-                    message = result['message']
+                    message = result['message'] # <-- This updates the message
                     if result['success']:
                         return result['player_id'], username # Login successful!
                 elif button_register.collidepoint(event.pos):
                     # --- Try to Register ---
                     print(f"Attempting registration for: {username}")
                     result = auth.register_player(username, password)
-                    message = result['message']
+                    message = result['message'] # <-- This updates the message
                     
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
                     # --- Try to Login on Enter ---
                     print(f"Attempting login for: {username}")
                     result = auth.login_player(username, password)
-                    message = result['message']
+                    message = result['message'] # <-- This updates the message
                     if result['success']:
                         return result['player_id'], username # Login successful!
                         
@@ -307,8 +339,10 @@ def login_register_screen():
                         
         # --- Drawing the Login Screen ---
         screen.fill(BLACK)
-        draw_text("Pool Game Login", title_font, WHITE, 200, 100)
-        draw_text(message, main_font, RED, 200, 500)
+        draw_text("Pool Game Login", title_font, WHITE, center_x - title_font.size("Pool Game Login")[0] // 2, SCREEN_HEIGHT * 0.1)
+        
+        # --- This message is updated on login failure ---
+        draw_text(message, main_font, RED, center_x - main_font.size(message)[0] // 2, SCREEN_HEIGHT * 0.8)
         
         # User box
         pygame.draw.rect(screen, color_active if active_field == "username" else color_inactive, input_box_user, 2)
@@ -327,26 +361,48 @@ def login_register_screen():
         pygame.display.flip()
         clock.tick(30)
 
-# --- Main Game Function ---
+# --- Main Game Function (Updated) ---
+
 
 def main_game(player_id, username, difficulty_id):
     """
     The main game loop, translated from your C++ main().
+    Uses fixed 1500x800 resolution.
     """
     
     # --- Game State Variables ---
-    # You can now use 'difficulty_id' to change game parameters
     game_over = False
+    game_over_saved = False # Flag to ensure we only save the score once
     did_win = False
     show_message = False
     message_timer = 0
     timer = 0.0
-    countdown_time = 300.0
+    
+    # Set time based on difficulty
+    if difficulty_id == 1: # Easy
+        countdown_time = 300 
+    elif difficulty_id == 2: # Medium
+        countdown_time = 180
+    else: # Hard
+        countdown_time = 90
+
     countdown_finished = False
     score = 0.0
     shots = 0
 
+    # --- NEW: Rules string for wrapping ---
+    rules_string = (
+        "Game Rules\n"
+        "\n"
+        "* Pot all balls (1-8).\n"
+        "* Pot the Pink (9) ball last to win.\n"
+        "* Potting the Pink ball early is a loss.\n"
+        "* Potting the cue ball is a foul and adds 10s to your time.\n"
+        "* Win with the fastest time and fewest shots for max score."
+    )
+
     # --- Setup Balls ---
+    # NOTE: Using global SCREEN_WIDTH/HEIGHT now
     startX = SCREEN_WIDTH - (SCREEN_WIDTH - TABLE_START_X) / 4
     startY = SCREEN_HEIGHT / 2
     
@@ -366,6 +422,7 @@ def main_game(player_id, username, difficulty_id):
     ]
     
     # --- Setup Holes ---
+    # NOTE: Corrected list with 6 holes, using global vars
     holes = [
         Hole(TABLE_START_X + 3, 3),
         Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, 3),
@@ -377,12 +434,31 @@ def main_game(player_id, username, difficulty_id):
     
     is_aiming = False
     running = True
+    music_playing = False # <-- ADDED: Flag to track music state
     
     # --- Main Game Loop ---
     while running:
         
+        # --- NEW: Music Control Logic ---
+        if shots == 0:
+            if not music_playing:
+                try:
+                    pygame.mixer.music.play(-1) # Start looping
+                    music_playing = True
+                except pygame.error:
+                    print("Could not play music.")
+        else: # shots > 0
+            if music_playing:
+                pygame.mixer.music.stop()
+                music_playing = False
+        # --- End of Music Control Logic ---
+
         delta_time = clock.tick(60) / 1000.0 # Time in seconds since last frame
         
+        # --- NEW: Flag to play sound only once per frame ---
+        collision_sound_played_this_frame = False
+        potting_sound_played_this_frame = False # <-- ADDED
+
         # --- Event Handling ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -403,7 +479,8 @@ def main_game(player_id, username, difficulty_id):
                         cue.speedy = dy * 2.5
                         cue.is_moving = True
                         shots += 1
-                        play_sound(collision_sound)
+                        # play_sound(collision_sound) # <-- Replaced with flag
+                        collision_sound_played_this_frame = True # Play on first shot
 
         # --- Game Logic Updates ---
         
@@ -413,12 +490,14 @@ def main_game(player_id, username, difficulty_id):
         cue.speedx *= 0.99 # Friction
         cue.speedy *= 0.99
 
-        if abs(cue.speedx) < 10 and abs(cue.speedy) < 10:
+        if abs(cue.speedx) < 5 and abs(cue.speedy) < 5: # Increased threshold
             cue.speedx = 0
             cue.speedy = 0
             cue.is_moving = False
+        else:
+            cue.is_moving = True # Ensure it's marked as moving
 
-        # Cue Collision with Table Boundaries
+        # Cue Collision with Table Boundaries (Using width/height)
         if cue.x - cue.radius < TABLE_START_X:
             cue.x = TABLE_START_X + cue.radius
             cue.speedx *= -1
@@ -439,12 +518,14 @@ def main_game(player_id, username, difficulty_id):
             ball.speedx *= 0.99
             ball.speedy *= 0.99
 
-            if abs(ball.speedx) < 10 and abs(ball.speedy) < 10:
+            if abs(ball.speedx) < 5 and abs(ball.speedy) < 5: # Increased threshold
                 ball.speedx = 0
                 ball.speedy = 0
                 ball.is_moving = False
+            else:
+                ball.is_moving = True # Ensure it's marked as moving
 
-            # Ball Collision with Table Boundaries
+            # Ball Collision with Table Boundaries (Using width/height)
             if ball.x - ball.radius < TABLE_START_X:
                 ball.x = TABLE_START_X + ball.radius
                 ball.speedx *= -1
@@ -460,35 +541,56 @@ def main_game(player_id, username, difficulty_id):
 
         # Collision Detection (Ball-Ball and Ball-Cue)
         for i in range(len(balls)):
-            for j in range(i + 1, len(balls)):
-                if check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (balls[j].x, balls[j].y), balls[j].radius):
-                    handle_collision(balls[i], balls[j])
-                    play_sound(collision_sound)
+            # Check only if ball 'i' is not potted
+            if not balls[i].did_go:
+                for j in range(i + 1, len(balls)):
+                    # Check only if ball 'j' is not potted
+                    if not balls[j].did_go and \
+                       check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (balls[j].x, balls[j].y), balls[j].radius):
+                        handle_collision(balls[i], balls[j])
+                        # --- MODIFIED: Only set flag if balls are actually moving ---
+                        if balls[i].is_moving or balls[j].is_moving:
+                            collision_sound_played_this_frame = True
 
-            if check_collision_circles((cue.x, cue.y), cue.radius, (balls[i].x, balls[i].y), balls[i].radius):
-                handle_collision(cue, balls[i])
-                play_sound(collision_sound)
+                if check_collision_circles((cue.x, cue.y), cue.radius, (balls[i].x, balls[i].y), balls[i].radius):
+                    handle_collision(cue, balls[i])
+                    # --- MODIFIED: Only set flag if balls are actually moving ---
+                    if cue.is_moving or balls[i].is_moving:
+                        collision_sound_played_this_frame = True
 
-            # Ball-Hole Collision
-            for hole in holes:
-                if check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (hole.x, hole.y), hole.radius):
-                    balls[i].did_go = True
-                    balls[i].x = (i + 1) * -5000 # Move off-screen
-                    balls[i].y = (i + 1) * -5000
-                    balls[i].speedx, balls[i].speedy = 0, 0
-                    balls[i].is_moving = False
-                    play_sound(potting_sound)
-                    
+                # Ball-Hole Collision
+                for hole in holes:
+                    if check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (hole.x, hole.y), hole.radius):
+                        # --- MODIFIED: Only play sound if ball hasn't been potted yet ---
+                        if not balls[i].did_go:
+                            potting_sound_played_this_frame = True
+                        balls[i].did_go = True
+                        balls[i].x = (i + 1) * -5000  # Move off-screen
+                        balls[i].y = (i + 1) * -5000
+                        balls[i].speedx, balls[i].speedy = 0, 0
+                        balls[i].is_moving = False
+                        
         # Cue-Hole Collision (Foul)
         for hole in holes:
             if check_collision_circles((cue.x, cue.y), cue.radius, (hole.x, hole.y), hole.radius):
+                # --- MODIFIED: Only play sound if cue is actually moving ---
+                if cue.is_moving:
+                    potting_sound_played_this_frame = True
                 cue.x = (SCREEN_WIDTH - TABLE_START_X) / 4 + TABLE_START_X
                 cue.y = SCREEN_HEIGHT / 2
                 cue.speedx, cue.speedy = 0, 0
-                timer += 10 # 10 second penalty
+                cue.is_moving = False # Stop it from moving
+                timer += 10  # 10 second penalty
                 show_message = True
                 message_timer = 0
-                play_sound(potting_sound)
+                
+        # --- NEW: Play collision sound once if any collision occurred ---
+        if collision_sound_played_this_frame:
+            play_sound(collision_sound)
+        
+        # --- NEW: Play potting sound once if any pot occurred ---
+        if potting_sound_played_this_frame:
+            play_sound(potting_sound)
 
         # Timer and Game Over Logic
         if not game_over:
@@ -499,38 +601,31 @@ def main_game(player_id, username, difficulty_id):
         if remaining_time <= 0 and not countdown_finished:
             countdown_finished = True
             game_over = True
+            did_win = False # Explicitly set loss
+            score = 0       # Explicitly set score
             remaining_time = 0
 
         # --- Drawing Code ---
-        screen.fill(SKYBLUE) # Table felt color
+        screen.fill(SKYBLUE) # Background color
         
-        # Draw table boundaries
+        # Draw table boundaries (Using width/height)
         pygame.draw.rect(screen, GREEN, (TABLE_START_X, 0, SCREEN_WIDTH - TABLE_START_X, SCREEN_HEIGHT))
         
         # Draw left info panel
         pygame.draw.rect(screen, BLACK, (0, 0, TABLE_START_X, SCREEN_HEIGHT))
         
         if not game_over:
-            # Draw baulk line
+            # Draw baulk line (Using width/height)
             pygame.draw.line(screen, WHITE, (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, 0), (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, SCREEN_HEIGHT), 1)
             pygame.draw.circle(screen, WHITE, (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, SCREEN_HEIGHT / 2), 75, 1) # 'D'
 
             draw_text(f"Player: {username}", title_font, RED, 50, 50)
             
             if shots == 0:
-                rules = [
-                    "Game Rules",
-                    "",
-                    "* Pot all balls (1-8).",
-                    "* Pot the Pink (9) ball last to win.",
-                    "* Potting the Pink ball early is a loss.",
-                    "* Potting the cue ball is a foul",
-                    "  and adds 10s to your time.",
-                    "* Win with the fastest time",
-                    "  and fewest shots for max score.",
-                ]
-                for i, line in enumerate(rules):
-                    draw_text(line, main_font, WHITE, 10, 150 + i * 30)
+                # --- NEW: Use text wrapping ---
+                # Define the rectangle for the rules text
+                rules_rect = pygame.Rect(10, 150, TABLE_START_X - 20, SCREEN_HEIGHT - 200)
+                draw_text_wrapped(screen, rules_string, main_font, WHITE, rules_rect)
             
             if show_message:
                 message_timer += delta_time
@@ -542,7 +637,8 @@ def main_game(player_id, username, difficulty_id):
             
             # Display Time
             time_text = f"Time Left: {remaining_time:.2f}"
-            draw_text(time_text, title_font, BLUE, 50, 100)
+            time_color = RED if remaining_time < 30 else BLUE
+            draw_text(time_text, title_font, time_color, 50, 100)
 
             # Draw holes, cue, and balls
             for hole in holes:
@@ -580,6 +676,14 @@ def main_game(player_id, username, difficulty_id):
             draw_text("Time's up!", foul_font, RED, 700, 400)
 
         if game_over:
+            
+            # --- SAVE SCORE (Runs only ONCE) ---
+            if not game_over_saved:
+                print("Game over. Saving score...")
+                save_game_session(player_id, difficulty_id, score, did_win)
+                game_over_saved = True # Prevent saving again
+            # ---
+            
             # Game is over, show scores
             if did_win:
                 draw_text("YOU WON! CONGRATS", foul_font, GREEN, 700, 400)
@@ -599,7 +703,7 @@ def main_game(player_id, username, difficulty_id):
                 draw_text("Be the first to set a score!", main_font, WHITE, 50, 200)
             else:
                 for i, record in enumerate(top_scores):
-                    text = f"{i+1}. {record['Username']} - {record['Score']}"
+                    text = f"{i+1}. {record['Username']} - {record['Score']:.2f}" # Format score
                     draw_text(text, main_font, WHITE, 50, 200 + i * 35)
 
             # Wait for user to quit
@@ -613,11 +717,6 @@ def main_game(player_id, username, difficulty_id):
         # --- Update the Display ---
         pygame.display.flip()
         
-    # --- End of Game Loop ---
-    # Save the score
-    if score > 0 or did_win:
-        save_game_session(player_id, difficulty_id, score, did_win)
-    
     pygame.quit()
     sys.exit()
 

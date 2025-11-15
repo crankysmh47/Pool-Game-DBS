@@ -51,7 +51,7 @@ def connect_and_test():
     except Error as e:
         # Handle errors
         print(f"Error connecting to MySQL: {e}")
-        if str(e)._contains_("Access denied"):
+        if "Access denied" in str(e):
             print("HINT: Check your 'db_user' and 'db_pass' variables.")
 
     finally:
