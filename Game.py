@@ -2,7 +2,7 @@ import pygame
 import math
 import sys
 import auth  # This is your 'auth.py' file for login/registration
-import mysql.connector
+
 
 # --- Pygame Setup ---
 pygame.init()
@@ -128,70 +128,7 @@ def handle_collision(ball1, ball):
     ball.speedx += impulse * nx
     ball.speedy += impulse * ny
 
-# --- Database Functions (Unchanged) ---
 
-def save_game_session(player_id, difficulty_id, score, did_win):
-    """
-    Saves the completed game to the database.
-    This replaces updateScoresFile().
-    """
-    conn = auth.get_db_connection()  # Use the centralized connection function
-    if conn is None:
-        print("Could not save score. DB connection failed.")
-        return
-
-    cursor = conn.cursor()
-    try:
-        # 1. Create the GameSession
-        sql_session = "INSERT INTO GameSession (DifficultyID) VALUES (%s)"
-        cursor.execute(sql_session, (difficulty_id,))
-        game_session_id = cursor.lastrowid  # Get the ID of the new session
-        
-        # 2. Link the Player to the session
-        sql_participant = """
-            INSERT INTO GameParticipant (GameSessionID, PlayerID, Score, IsWinner) 
-            VALUES (%s, %s, %s, %s)
-        """
-        values = (game_session_id, player_id, int(score), did_win)
-        cursor.execute(sql_participant, values)
-        
-        conn.commit()
-        print(f"Game session {game_session_id} saved for player {player_id} with score {score}.")
-    except mysql.connector.Error as e:
-        print(f"Database error saving game: {e}")
-    finally:
-        cursor.close()
-        conn.close()
-
-def get_top_scores():
-    """
-    Gets the top 5 scores from the database.
-    This replaces getTopScore().
-    """
-    conn = auth.get_db_connection()  # Use the centralized connection function
-    if conn is None:
-        return []
-
-    cursor = conn.cursor(dictionary=True)
-    top_scores = []
-    try:
-        # Join Player and GameParticipant, order by score, get top 5
-        sql = """
-            SELECT p.Username, gp.Score
-            FROM GameParticipant gp
-            JOIN Player p ON p.PlayerID = gp.PlayerID
-            ORDER BY gp.Score DESC
-            LIMIT 5
-        """
-        cursor.execute(sql)
-        top_scores = cursor.fetchall()
-
-    except mysql.connector.Error as e:
-        print(f"Database error getting top scores: {e}")
-    finally:
-        cursor.close()
-        conn.close()
-        return top_scores
 
 # --- Game Object Classes (from C++ Structs) ---
 
@@ -383,14 +320,18 @@ def main_game(player_id, username, difficulty_id):
         countdown_time = 500
         aiming_level = 'easy'
         hole_radius_change = 5
+        difficulty_factor = 1.0
     elif difficulty_id == 2: # Medium
         countdown_time = 400
         aiming_level = 'medium'
         hole_radius_change = 0
+        difficulty_factor = 1.35
     else: # Hard
         countdown_time = 300
         aiming_level = 'hard'
         hole_radius_change = -5
+        difficulty_factor = 1.75
+    
 
     countdown_finished = False
     score = 0.0
@@ -677,7 +618,7 @@ def main_game(player_id, username, difficulty_id):
             if win:
                 did_win = True
                 # Score calculation
-                score = ((countdown_time - timer) / countdown_time) * 200 - (shots * 1) + 100
+                score = (((countdown_time - timer) / countdown_time) * 200 - (shots * 1) + 100) * difficulty_factor
                 if score < 0: score = 0
             else:
                 did_win = False
@@ -691,7 +632,7 @@ def main_game(player_id, username, difficulty_id):
             # --- SAVE SCORE (Runs only ONCE) ---
             if not game_over_saved:
                 print("Game over. Saving score...")
-                save_game_session(player_id, difficulty_id, score, did_win)
+                auth.save_game_session(player_id, difficulty_id, score, did_win)
                 game_over_saved = True # Prevent saving again
             # ---
             
@@ -709,12 +650,12 @@ def main_game(player_id, username, difficulty_id):
             
             # Display top scores from DB
             draw_text("Top Scorers:", title_font, WHITE, 50, 150)
-            top_scores = get_top_scores()
+            top_scores = auth.get_top_scores()
             if not top_scores:
                 draw_text("Be the first to set a score!", main_font, WHITE, 50, 200)
             else:
                 for i, record in enumerate(top_scores):
-                    text = f"{i+1}. {record['Username']} - {record['Score']:.2f}" # Format score
+                    text = f"{i+1}. {record['Username']} - {record['Score']:.2f}({record['DifficultyName']})" # Format score
                     draw_text(text, main_font, WHITE, 50, 200 + i * 35)
 
             # Wait for user to quit

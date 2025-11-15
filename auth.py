@@ -127,6 +127,78 @@ def login_player(username, password):
         cursor.close()
         conn.close()
 
+
+
+
+
+
+# --- Database Functions (Unchanged) ---
+
+def save_game_session(player_id, difficulty_id, score, did_win):
+    """
+    Saves the completed game to the database.
+    This replaces updateScoresFile().
+    """
+    conn = get_db_connection()  # Use the centralized connection function
+    if conn is None:
+        print("Could not save score. DB connection failed.")
+        return
+
+    cursor = conn.cursor()
+    try:
+        # 1. Create the GameSession
+        sql_session = "INSERT INTO GameSession (DifficultyID) VALUES (%s)"
+        cursor.execute(sql_session, (difficulty_id,))
+        game_session_id = cursor.lastrowid  # Get the ID of the new session
+        
+        # 2. Link the Player to the session
+        sql_participant = """
+            INSERT INTO GameParticipant (GameSessionID, PlayerID, Score, IsWinner) 
+            VALUES (%s, %s, %s, %s)
+        """
+        values = (game_session_id, player_id, int(score), did_win)
+        cursor.execute(sql_participant, values)
+        
+        conn.commit()
+        print(f"Game session {game_session_id} saved for player {player_id} with score {score}.")
+    except mysql.connector.Error as e:
+        print(f"Database error saving game: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_top_scores():
+    """
+    Gets the top 5 scores from the database.
+    This replaces getTopScore().
+    """
+    conn = get_db_connection()  # Use the centralized connection function
+    if conn is None:
+        return []
+
+    cursor = conn.cursor(dictionary=True)
+    top_scores = []
+    try:
+        # Join Player and GameParticipant, order by score, get top 5
+        sql = """
+            SELECT p.Username, gp.Score
+            FROM GameParticipant gp
+            JOIN Player p ON p.PlayerID = gp.PlayerID
+            JOIN GameSession gs ON gs.GameSessionID = gp.GameSessionID
+            JOIN Difficultylevel d ON d.DifficultyID = gs.DifficultyID
+            ORDER BY gp.Score, p.Username DESC
+            LIMIT 5
+        """
+        cursor.execute(sql)
+        top_scores = cursor.fetchall()
+
+    except mysql.connector.Error as e:
+        print(f"Database error getting top scores: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+        return top_scores
+
 # --- This makes the script runnable for testing ---
 if __name__ == "__main__":
     
@@ -142,3 +214,4 @@ if __name__ == "__main__":
     # Test Login (Wrong Password)
     print("\nTesting Failed Login (Wrong Pass)...")
     print(login_player("danyal_test", "wrong_password"))
+
