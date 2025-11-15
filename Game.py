@@ -9,9 +9,9 @@ pygame.init()
 pygame.mixer.init()  # for sounds
 
 # Screen dimensions (FIXED)
-SCREEN_WIDTH = 1500
-SCREEN_HEIGHT = 800
-TABLE_START_X = 375  # The left-side panel width (1500 // 4)
+SCREEN_WIDTH = 1400
+SCREEN_HEIGHT = 750
+TABLE_START_X = SCREEN_WIDTH // 4 # The left-side panel width (1500 // 4)
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("9-Ball Game (Database Project)")
 clock = pygame.time.Clock()
@@ -380,11 +380,17 @@ def main_game(player_id, username, difficulty_id):
     
     # Set time based on difficulty
     if difficulty_id == 1: # Easy
-        countdown_time = 300 
+        countdown_time = 500
+        aiming_level = 'easy'
+        hole_radius_change = 5
     elif difficulty_id == 2: # Medium
-        countdown_time = 180
+        countdown_time = 400
+        aiming_level = 'medium'
+        hole_radius_change = 0
     else: # Hard
-        countdown_time = 90
+        countdown_time = 300
+        aiming_level = 'hard'
+        hole_radius_change = -5
 
     countdown_finished = False
     score = 0.0
@@ -431,6 +437,8 @@ def main_game(player_id, username, difficulty_id):
         Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, SCREEN_HEIGHT - 3),
         Hole(SCREEN_WIDTH - 3, SCREEN_HEIGHT - 3)
     ]
+    for hole in holes:
+        hole.radius += hole_radius_change
     
     is_aiming = False
     running = True
@@ -609,7 +617,7 @@ def main_game(player_id, username, difficulty_id):
         screen.fill(SKYBLUE) # Background color
         
         # Draw table boundaries (Using width/height)
-        pygame.draw.rect(screen, GREEN, (TABLE_START_X, 0, SCREEN_WIDTH - TABLE_START_X, SCREEN_HEIGHT))
+        pygame.draw.rect(screen, SKYBLUE, (TABLE_START_X, 0, SCREEN_WIDTH - TABLE_START_X, SCREEN_HEIGHT))
         
         # Draw left info panel
         pygame.draw.rect(screen, BLACK, (0, 0, TABLE_START_X, SCREEN_HEIGHT))
@@ -650,8 +658,11 @@ def main_game(player_id, username, difficulty_id):
             # Draw cue line
             if is_aiming:
                 mouse_pos = pygame.mouse.get_pos()
-                pygame.draw.line(screen, BROWN, (cue.x, cue.y), mouse_pos, 3)
-                pygame.draw.line(screen, WHITE, (cue.x, cue.y), (2 * cue.x - mouse_pos[0], 2 * cue.y - mouse_pos[1]), 1)
+                if aiming_level != 'hard': # Don't draw brown stick on hard
+                    pygame.draw.line(screen, BROWN, (cue.x, cue.y), mouse_pos, 3)
+                
+                if aiming_level == 'easy': # Only draw ghost line on easy
+                    pygame.draw.line(screen, WHITE, (cue.x, cue.y), (2 * cue.x - mouse_pos[0], 2 * cue.y - mouse_pos[1]), 1)
         
         # --- Game Over / Win/Loss Logic ---
         pink_ball = balls[8]
