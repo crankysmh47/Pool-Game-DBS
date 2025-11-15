@@ -18,6 +18,7 @@ clock = pygame.time.Clock()
 main_font = pygame.font.SysFont("Arial", 25)
 title_font = pygame.font.SysFont("Arial", 35)
 foul_font = pygame.font.SysFont("Arial", 50)
+achievement_font = pygame.font.SysFont("Arial", 20, bold=True) # Font for popups
 
 # --- Colors ---
 SKYBLUE = (135, 206, 235)
@@ -32,6 +33,13 @@ DARKPURPLE = (128, 0, 128)
 ORANGE = (255, 165, 0)
 DARKGREEN = (0, 100, 0)
 PINK = (255, 192, 203)
+
+GOLD = (255, 215, 0) # For achievement popup
+
+
+
+
+
 
 # --- Sound Setup (Unchanged) ---
 try:
@@ -315,6 +323,15 @@ def main_game(player_id, username, difficulty_id):
     message_timer = 0
     timer = 0.0
     
+
+    earned_achievements_cache = auth.get_player_achievements(player_id)
+    COMBO_ACHIEVEMENT_ID = 7   # (Pot 2+ balls in one shot)
+    FIRST_POT_ID = 8           # (Pot your first ball)
+
+
+
+
+
     # Set time based on difficulty
     if difficulty_id == 1: # Easy
         countdown_time = 500
@@ -336,6 +353,13 @@ def main_game(player_id, username, difficulty_id):
     countdown_finished = False
     score = 0.0
     shots = 0
+    
+    fouls = 0
+    balls_potted = 0
+    total_balls_potted_game = 0
+    
+    achievement_popup_queue = []
+
 
     # --- NEW: Rules string for wrapping ---
     rules_string = (
@@ -396,6 +420,7 @@ def main_game(player_id, username, difficulty_id):
                     music_playing = True
                 except pygame.error:
                     print("Could not play music.")
+
         else: # shots > 0
             if music_playing:
                 pygame.mixer.music.stop()
@@ -416,6 +441,7 @@ def main_game(player_id, username, difficulty_id):
             if not cue.is_moving and not game_over:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # Left click down
                     is_aiming = True
+                    balls_potted = 0
                 
                 if event.type == pygame.MOUSEBUTTONUP and event.button == 1: # Left click up
                     if is_aiming:
@@ -513,6 +539,7 @@ def main_game(player_id, username, difficulty_id):
                         # --- MODIFIED: Only play sound if ball hasn't been potted yet ---
                         if not balls[i].did_go:
                             potting_sound_played_this_frame = True
+                        balls_potted += 1
                         balls[i].did_go = True
                         balls[i].x = (i + 1) * -5000  # Move off-screen
                         balls[i].y = (i + 1) * -5000
@@ -532,6 +559,7 @@ def main_game(player_id, username, difficulty_id):
                 timer += 10  # 10 second penalty
                 show_message = True
                 message_timer = 0
+                fouls += 1
                 
         # --- NEW: Play collision sound once if any collision occurred ---
         if collision_sound_played_this_frame:
@@ -605,6 +633,31 @@ def main_game(player_id, username, difficulty_id):
                 if aiming_level == 'easy': # Only draw ghost line on easy
                     pygame.draw.line(screen, WHITE, (cue.x, cue.y), (2 * cue.x - mouse_pos[0], 2 * cue.y - mouse_pos[1]), 1)
         
+        if not cue.is_moving and shots > 0:
+            # Check real-time achievements *only if* balls were potted this turn
+            if balls_potted > 0:
+                
+                # 1. Check for "First Potter"
+                if FIRST_POT_ID not in earned_achievements_cache and total_balls_potted_game == 0:
+                    print("Granting FIRST POTTER")
+                    auth.grant_achievement(player_id, FIRST_POT_ID)
+                    earned_achievements_cache.add(FIRST_POT_ID)
+                    achievement_popup_queue.append({"text": "First Potter!", "timer": 0}) # Add name to popup queue
+                
+                # 2. Check for "Combo Shot"
+                if COMBO_ACHIEVEMENT_ID not in earned_achievements_cache and balls_potted >= 2:
+                    print("Granting COMBO SHOT")
+                    auth.grant_achievement(player_id, COMBO_ACHIEVEMENT_ID)
+                    earned_achievements_cache.add(COMBO_ACHIEVEMENT_ID)
+                    achievement_popup_queue.append({"text": "Combo Shot!", "timer": 0}) # Add name to popup queue
+
+                # Update total balls potted
+                total_balls_potted_game += balls_potted
+            
+            # Reset turn counter
+            total_balls_potted_game += balls_potted
+            balls_potted = 0
+
         # --- Game Over / Win/Loss Logic ---
         pink_ball = balls[8]
         if pink_ball.did_go and not game_over:
@@ -633,6 +686,15 @@ def main_game(player_id, username, difficulty_id):
             if not game_over_saved:
                 print("Game over. Saving score...")
                 auth.save_game_session(player_id, difficulty_id, score, did_win)
+                auth.check_all_achievements(
+                    player_id, 
+                    difficulty_id, 
+                    timer, 
+                    shots, 
+                    fouls,  # <-- Passing our new counter
+                    did_win
+                )
+                
                 game_over_saved = True # Prevent saving again
             # ---
             
@@ -655,7 +717,7 @@ def main_game(player_id, username, difficulty_id):
                 draw_text("Be the first to set a score!", main_font, WHITE, 50, 200)
             else:
                 for i, record in enumerate(top_scores):
-                    text = f"{i+1}. {record['Username']} - {record['Score']:.2f}({record['DifficultyName']})" # Format score
+                    text = f"{i+1}. {record['Username']} - {record['Score']:.2f}({record['LevelName']})" # Format score
                     draw_text(text, main_font, WHITE, 50, 200 + i * 35)
 
             # Wait for user to quit
@@ -665,6 +727,38 @@ def main_game(player_id, username, difficulty_id):
                     running = False
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     running = False
+
+        
+                
+        # --- NEW: Achievement Popup Drawing Logic ---
+        # (This draws on top of everything, including the game over screen)
+        if achievement_popup_queue:
+            
+            # Get the first item (which is now a dictionary)
+            popup_item = achievement_popup_queue[0]
+            popup_text = popup_item["text"] # <-- FIX: Get the text *from* the dict
+            
+            # Create a semi-transparent background
+            popup_surf = pygame.Surface((350, 60))
+            popup_surf.set_alpha(200) # Semi-transparent
+            popup_surf.fill(BLACK)
+            
+            # Draw the popup
+            popup_rect = popup_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
+            screen.blit(popup_surf, popup_rect)
+            
+            # Draw border and text
+            pygame.draw.rect(screen, GOLD, popup_rect, 3) # Gold border
+            draw_text("Achievement Unlocked!", achievement_font, GOLD, popup_rect.x + 80, popup_rect.y + 10)
+            
+            # This is line 751, now with the correct popup_text (a string)
+            draw_text(popup_text, main_font, WHITE, popup_rect.x + (350 - main_font.size(popup_text)[0]) // 2, popup_rect.y + 35)
+            
+            # Simple timer logic: show for 2 seconds (120 frames)
+            popup_item["timer"] += 1 # <-- FIX: Increment the timer *inside* the dictionary
+            
+            if popup_item["timer"] > 120:
+                achievement_popup_queue.pop(0) # Remove from queue
 
         # --- Update the Display ---
         pygame.display.flip()

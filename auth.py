@@ -24,6 +24,99 @@ def get_db_connection():
         print(f"Error connecting to MySQL: {e}")
         return None
 
+
+
+# --- NEW FUNCTION (for real-time cache) ---
+def get_player_achievements(player_id):
+    """
+    Gets a set of all AchievementIDs a player has already earned.
+    This is used to cache achievements at the start of a game.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        return set() # Return an empty set on failure
+
+    cursor = conn.cursor()
+    earned_set = set()
+    try:
+        sql = "SELECT AchievementID FROM PlayerAchievement WHERE PlayerID = %s"
+        cursor.execute(sql, (player_id,))
+        results = cursor.fetchall()
+        
+        # Unpack the list of tuples into a simple set
+        earned_set = {row[0] for row in results}
+        
+    except Error as e:
+        print(f"Database error getting player achievements: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+        return earned_set
+
+# --- NEW FUNCTION (for real-time grant) ---
+def grant_achievement(player_id, achievement_id):
+    """
+    Grants a *single* new achievement to a player, in real-time.
+    Uses INSERT IGNORE to be safe if it's called by mistake.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        print("Could not grant achievement. DB connection failed.")
+        return
+
+    cursor = conn.cursor()
+    try:
+        sql = """
+            INSERT IGNORE INTO PlayerAchievement (PlayerID, AchievementID, DateEarned)
+            VALUES (%s, %s, NOW())
+        """
+        cursor.execute(sql, (player_id, achievement_id))
+        conn.commit()
+        
+        # We can check if a row was actually inserted
+        if cursor.rowcount > 0:
+            print(f"Player {player_id} just earned achievement {achievement_id}!")
+        
+    except Error as e:
+        print(f"Database error granting achievement: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# --- This is your existing Stored Procedure call (for end-of-game) ---
+def check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win):
+    """
+    Calls the master stored procedure to check all end-of-game achievements.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        print("Could not check achievements. DB connection failed.")
+        return
+
+    cursor = conn.cursor()
+    try:
+        args = (player_id, difficulty_id, timer, shots, fouls, did_win)
+        cursor.callproc('sp_CheckPlayerAchievements', args)
+        conn.commit()
+        print("Successfully checked for end-of-game achievements.")
+        
+    except Error as e:
+        print(f"Database error checking achievements: {e}")
+        conn.rollback() 
+    finally:
+        cursor.close()
+        conn.close()
+
+
+
+
+
+
+
+
+
 def register_player(username, password):
     """
     Securely registers a new player.
@@ -181,7 +274,7 @@ def get_top_scores():
     try:
         # Join Player and GameParticipant, order by score, get top 5
         sql = """
-            SELECT p.Username, gp.Score
+            SELECT p.Username, gp.Score, d.LevelName
             FROM GameParticipant gp
             JOIN Player p ON p.PlayerID = gp.PlayerID
             JOIN GameSession gs ON gs.GameSessionID = gp.GameSessionID
