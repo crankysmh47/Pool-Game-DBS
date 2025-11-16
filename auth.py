@@ -86,21 +86,34 @@ def grant_achievement(player_id, achievement_id):
 
 
 # --- This is your existing Stored Procedure call (for end-of-game) ---
+# --- This is your existing Stored Procedure call (for end-of-game) ---
 def check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win):
     """
-    Calls the master stored procedure to check all end-of-game achievements.
+    Calls the master stored procedure to check all end-of-game achievements
+    and returns a list of newly granted achievements.
     """
     conn = get_db_connection()
     if conn is None:
         print("Could not check achievements. DB connection failed.")
-        return
+        return [] # <-- Return an empty list
 
-    cursor = conn.cursor()
+    # --- NEW: We must use dictionary=True to read the results ---
+    cursor = conn.cursor(dictionary=True)
+    newly_earned = [] # <-- List to store achievements
     try:
         args = (player_id, difficulty_id, timer, shots, fouls, did_win)
-        cursor.callproc('sp_CheckPlayerAchievements', args)
+        
+        # callproc returns an iterator of result sets
+        results_iterator = cursor.callproc('sp_CheckPlayerAchievements', args)
+        
+        # --- NEW: Loop to read the results ---
+        # Our procedure returns one (1) result set, so we read it.
+        for result in results_iterator:
+            if result.with_rows:
+                newly_earned = result.fetchall()
+
         conn.commit()
-        print("Successfully checked for end-of-game achievements.")
+        print(f"Successfully checked for end-of-game achievements. {len(newly_earned)} new.")
         
     except Error as e:
         print(f"Database error checking achievements: {e}")
@@ -108,6 +121,8 @@ def check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_wi
     finally:
         cursor.close()
         conn.close()
+        # --- NEW: Return the list of achievements ---
+        return newly_earned
 
 
 
@@ -279,7 +294,7 @@ def get_top_scores():
             JOIN Player p ON p.PlayerID = gp.PlayerID
             JOIN GameSession gs ON gs.GameSessionID = gp.GameSessionID
             JOIN Difficultylevel d ON d.DifficultyID = gs.DifficultyID
-            ORDER BY gp.Score, p.Username DESC
+            ORDER BY gp.Score DESC
             LIMIT 5
         """
         cursor.execute(sql)

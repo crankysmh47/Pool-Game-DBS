@@ -697,6 +697,30 @@ def main_game(player_id, username, difficulty_id):
                 
                 game_over_saved = True # Prevent saving again
             # ---
+            if achievement_popup_queue:
+                # Get the first item (which is now a dictionary)
+                popup_item = achievement_popup_queue[0]
+                popup_text = popup_item["text"] # Get the text from the dict
+                
+                # Create a semi-transparent background
+                popup_surf = pygame.Surface((350, 60))
+                popup_surf.set_alpha(200) # Semi-transparent
+                popup_surf.fill(BLACK)
+                
+                # Draw the popup
+                popup_rect = popup_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
+                screen.blit(popup_surf, popup_rect)
+                
+                # Draw border and text
+                pygame.draw.rect(screen, GOLD, popup_rect, 3) # Gold border
+                draw_text("Achievement Unlocked!", achievement_font, GOLD, popup_rect.x + 80, popup_rect.y + 10)
+                draw_text(popup_text, main_font, WHITE, popup_rect.x + (350 - main_font.size(popup_text)[0]) // 2, popup_rect.y + 35)
+                
+                # Simple timer logic: show for 2 seconds (120 frames)
+                popup_item["timer"] += 1 # Increment the timer *inside* the dictionary
+                
+                if popup_item["timer"] > 120:
+                    achievement_popup_queue.pop(0)
             
             # Game is over, show scores
             if did_win:
@@ -722,6 +746,7 @@ def main_game(player_id, username, difficulty_id):
 
             # Wait for user to quit
             draw_text("Click anywhere to quit.", main_font, WHITE, 700, 600)
+            
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -732,33 +757,8 @@ def main_game(player_id, username, difficulty_id):
                 
         # --- NEW: Achievement Popup Drawing Logic ---
         # (This draws on top of everything, including the game over screen)
-        if achievement_popup_queue:
-            
-            # Get the first item (which is now a dictionary)
-            popup_item = achievement_popup_queue[0]
-            popup_text = popup_item["text"] # <-- FIX: Get the text *from* the dict
-            
-            # Create a semi-transparent background
-            popup_surf = pygame.Surface((350, 60))
-            popup_surf.set_alpha(200) # Semi-transparent
-            popup_surf.fill(BLACK)
-            
-            # Draw the popup
-            popup_rect = popup_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
-            screen.blit(popup_surf, popup_rect)
-            
-            # Draw border and text
-            pygame.draw.rect(screen, GOLD, popup_rect, 3) # Gold border
-            draw_text("Achievement Unlocked!", achievement_font, GOLD, popup_rect.x + 80, popup_rect.y + 10)
-            
-            # This is line 751, now with the correct popup_text (a string)
-            draw_text(popup_text, main_font, WHITE, popup_rect.x + (350 - main_font.size(popup_text)[0]) // 2, popup_rect.y + 35)
-            
-            # Simple timer logic: show for 2 seconds (120 frames)
-            popup_item["timer"] += 1 # <-- FIX: Increment the timer *inside* the dictionary
-            
-            if popup_item["timer"] > 120:
-                achievement_popup_queue.pop(0) # Remove from queue
+         # Remove from queue
+        # --- End of new block ---
 
         # --- Update the Display ---
         pygame.display.flip()
