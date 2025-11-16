@@ -175,18 +175,18 @@ def post_login_menu(player_id, username):
     while running:
         screen.fill((30, 30, 30))
 
-        draw_text("Welcome, " + username, title_font, WHITE,  450, 120)
+        draw_text("Welcome, " + username, title_font, WHITE, 450, 120)
         draw_text("Select an option", menu_font, GOLD, 480, 180)
 
         # Draw Buttons
         pygame.draw.rect(screen, BLUE, play_button)
         pygame.draw.rect(screen, GREEN, achieve_button)
 
-        draw_text("PLAY", menu_font, WHITE,  play_button.x + 85, play_button.y + 18)
+        draw_text("PLAY", menu_font, WHITE, play_button.x + 85, play_button.y + 18)
         draw_text("ACHIEVEMENTS", menu_font, WHITE,
                   achieve_button.x + 15, achieve_button.y + 18)
 
-        for event in pygame.event.get():
+        for event in pygame.event.get():  # <-- THIS IS LINE 189
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
@@ -195,12 +195,13 @@ def post_login_menu(player_id, username):
                 mx, my = pygame.mouse.get_pos()
 
                 if play_button.collidepoint((mx, my)):
-                    return "play"     # go to difficulty next
+                    return "play"
 
                 if achieve_button.collidepoint((mx, my)):
-                    return "achievements"  # open achievement viewer
+                    return "achievements"
 
         pygame.display.update()
+
 def achievements_screen(player_id, username):
     running = True
 
@@ -372,6 +373,77 @@ def login_register_screen():
         
         pygame.display.flip()
         clock.tick(30)
+
+def change_password_screen(player_id, username):
+    current_pass = ""
+    new_pass = ""
+    msg = ""
+    active = "current"
+
+    input_box_current = pygame.Rect(450, 250, 300, 50)
+    input_box_new = pygame.Rect(450, 330, 300, 50)
+    save_button = pygame.Rect(450, 420, 300, 60)
+
+    while True:
+        screen.fill((20, 20, 20))
+        draw_text("Change Password", title_font, GOLD, 450, 150)
+
+        draw_text("Current Password:", main_font, WHITE, 300, 260)
+        pygame.draw.rect(screen, WHITE, input_box_current, 2)
+        draw_text('*' * len(current_pass), main_font, WHITE, input_box_current.x+5, input_box_current.y+5)
+
+        draw_text("New Password:", main_font, WHITE, 300, 340)
+        pygame.draw.rect(screen, WHITE, input_box_new, 2)
+        draw_text('*' * len(new_pass), main_font, WHITE, input_box_new.x+5, input_box_new.y+5)
+
+        # Save button
+        pygame.draw.rect(screen, GREEN, save_button)
+        draw_text("SAVE PASSWORD", main_font, BLACK, save_button.x+40, save_button.y+15)
+
+        draw_text(msg, main_font, RED, 450, 500)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if input_box_current.collidepoint(event.pos):
+                    active = "current"
+                elif input_box_new.collidepoint(event.pos):
+                    active = "new"
+                elif save_button.collidepoint(event.pos):
+                    # Try login with old password first
+                    login_check = auth.login_player(username, current_pass)
+                    if not login_check["success"]:
+                        msg = "Current password incorrect."
+                    else:
+                        # Change password manually
+                        result = auth.register_player(username + "_temp", "abc")  # workaround
+                        conn = auth.get_db_connection()
+                        cursor = conn.cursor()
+                        import hashlib, os
+                        salt = os.urandom(16).hex()
+                        new_hash = hashlib.pbkdf2_hmac('sha256', new_pass.encode(), bytes.fromhex(salt), 100000).hex()
+
+                        sql = "UPDATE Player SET PasswordHash=%s, Salt=%s WHERE PlayerID=%s"
+                        cursor.execute(sql, (new_hash, salt, player_id))
+                        conn.commit()
+                        cursor.close(); conn.close()
+                        msg = "Password changed successfully!"
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_BACKSPACE:
+                    if active == "current":
+                        current_pass = current_pass[:-1]
+                    else:
+                        new_pass = new_pass[:-1]
+                else:
+                    if active == "current":
+                        current_pass += event.unicode
+                    else:
+                        new_pass += event.unicode
+
+        pygame.display.flip()
 
 # --- Main Game Function (Updated) ---
 
@@ -753,42 +825,51 @@ def main_game(player_id, username, difficulty_id):
             if not game_over_saved:
                 print("Game over. Saving score...")
                 auth.save_game_session(player_id, difficulty_id, score, did_win)
-                auth.check_all_achievements(
-                    player_id, 
-                    difficulty_id, 
-                    timer, 
-                    shots, 
-                    fouls,  # <-- Passing our new counter
+                # Run the stored procedure and capture any new achievements
+                new_achievements = auth.check_all_achievements(
+                    player_id,
+                    difficulty_id,
+                    timer,
+                    shots,
+                    fouls,
                     did_win
                 )
-                
+
+                # Add popups for each achievement returned by SQL
+                for ach in new_achievements:
+                    achievement_name = ach["Name"]
+                    achievement_id = ach["AchievementID"]
+
+                    # Prevent duplicates inside game
+                    if achievement_id not in earned_achievements_cache:
+                        earned_achievements_cache.add(achievement_id)
+                        achievement_popup_queue.append({"text": achievement_name, "timer": 0})
+
                 game_over_saved = True # Prevent saving again
             # ---
+            # --- GLOBAL POPUP SYSTEM (Always visible even during gameplay) ---
             if achievement_popup_queue:
-                # Get the first item (which is now a dictionary)
                 popup_item = achievement_popup_queue[0]
-                popup_text = popup_item["text"] # Get the text from the dict
-                
-                # Create a semi-transparent background
+                popup_text = popup_item["text"]
+
                 popup_surf = pygame.Surface((350, 60))
-                popup_surf.set_alpha(200) # Semi-transparent
+                popup_surf.set_alpha(200)
                 popup_surf.fill(BLACK)
-                
-                # Draw the popup
-                popup_rect = popup_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
+
+                popup_rect = popup_surf.get_rect(center=(SCREEN_WIDTH // 2, 70))
                 screen.blit(popup_surf, popup_rect)
-                
-                # Draw border and text
-                pygame.draw.rect(screen, GOLD, popup_rect, 3) # Gold border
-                draw_text("Achievement Unlocked!", achievement_font, GOLD, popup_rect.x + 80, popup_rect.y + 10)
-                draw_text(popup_text, main_font, WHITE, popup_rect.x + (350 - main_font.size(popup_text)[0]) // 2, popup_rect.y + 35)
-                
-                # Simple timer logic: show for 2 seconds (120 frames)
-                popup_item["timer"] += 1 # Increment the timer *inside* the dictionary
-                
+
+                pygame.draw.rect(screen, GOLD, popup_rect, 3)
+                draw_text("Achievement Unlocked!", achievement_font, GOLD,
+                          popup_rect.x + 80, popup_rect.y + 5)
+                draw_text(popup_text, main_font, WHITE,
+                          popup_rect.x + (350 - main_font.size(popup_text)[0]) // 2,
+                          popup_rect.y + 32)
+
+                popup_item["timer"] += 1
                 if popup_item["timer"] > 120:
                     achievement_popup_queue.pop(0)
-            
+
             # Game is over, show scores
             if did_win:
                 draw_text("YOU WON! CONGRATS", foul_font, GREEN, 700, 400)
@@ -812,16 +893,39 @@ def main_game(player_id, username, difficulty_id):
                     draw_text(text, main_font, WHITE, 50, 200 + i * 35)
 
             # Wait for user to quit
-            draw_text("Click anywhere to quit.", main_font, WHITE, 700, 600)
-            
+            # --- FINAL MENU BUTTONS ---
+            replay_button = pygame.Rect(650, 580, 200, 60)
+            exit_button = pygame.Rect(900, 580, 200, 60)
+            change_pass_button = pygame.Rect(400, 580, 200, 60)
+
+            pygame.draw.rect(screen, BLUE, replay_button)
+            pygame.draw.rect(screen, RED, exit_button)
+            pygame.draw.rect(screen, GREEN, change_pass_button)
+
+            draw_text("REPLAY", main_font, WHITE, replay_button.x + 55, replay_button.y + 18)
+            draw_text("EXIT", main_font, WHITE, exit_button.x + 75, exit_button.y + 18)
+            draw_text("CHANGE PASS", main_font, WHITE, change_pass_button.x + 20, change_pass_button.y + 18)
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    running = False
 
-        
-                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = pygame.mouse.get_pos()
+
+                    # Replay button
+                    if replay_button.collidepoint((mx, my)):
+                        return "replay"
+
+                    # Exit button
+                    if exit_button.collidepoint((mx, my)):
+                        pygame.quit();
+                        sys.exit()
+
+                    # Change password
+                    if change_pass_button.collidepoint((mx, my)):
+                        change_password_screen(player_id, username)
+
         # --- NEW: Achievement Popup Drawing Logic ---
         # (This draws on top of everything, including the game over screen)
          # Remove from queue
@@ -846,7 +950,10 @@ while True:
 
     if choice == "play":
         difficulty_id = difficulty_screen()
-        main_game(player_id, username, difficulty_id)
+        result = main_game(player_id, username, difficulty_id)
+
+        if result == "replay":
+            main_game(player_id, username, difficulty_id)
 
     elif choice == "achievements":
         achievements_screen(player_id, username)
