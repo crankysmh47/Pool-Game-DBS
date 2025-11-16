@@ -3,14 +3,13 @@ import math
 import sys
 import auth  # This is your 'auth.py' file for login/registration
 
-
 # --- Pygame Setup ---
 pygame.init()
 pygame.mixer.init()  # for sounds
 
 # Screen dimensions (FIXED)
-SCREEN_WIDTH = 1400
-SCREEN_HEIGHT = 750
+SCREEN_WIDTH = 1200
+SCREEN_HEIGHT = 650
 TABLE_START_X = SCREEN_WIDTH // 4 # The left-side panel width (1500 // 4)
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("9-Ball Game (Database Project)")
@@ -165,6 +164,74 @@ class Hole:
         pygame.draw.circle(screen, BLACK, (int(self.x), int(self.y)), self.radius)
 
 
+def post_login_menu(player_id, username):
+    menu_font = pygame.font.SysFont("arial", 38)
+    running = True
+
+    # Buttons
+    play_button = pygame.Rect(450, 250, 300, 70)
+    achieve_button = pygame.Rect(450, 350, 300, 70)
+
+    while running:
+        screen.fill((30, 30, 30))
+
+        draw_text("Welcome, " + username, title_font, WHITE,  450, 120)
+        draw_text("Select an option", menu_font, GOLD, 480, 180)
+
+        # Draw Buttons
+        pygame.draw.rect(screen, BLUE, play_button)
+        pygame.draw.rect(screen, GREEN, achieve_button)
+
+        draw_text("PLAY", menu_font, WHITE,  play_button.x + 85, play_button.y + 18)
+        draw_text("ACHIEVEMENTS", menu_font, WHITE,
+                  achieve_button.x + 15, achieve_button.y + 18)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = pygame.mouse.get_pos()
+
+                if play_button.collidepoint((mx, my)):
+                    return "play"     # go to difficulty next
+
+                if achieve_button.collidepoint((mx, my)):
+                    return "achievements"  # open achievement viewer
+
+        pygame.display.update()
+def achievements_screen(player_id, username):
+    running = True
+
+    # Get all achievement IDs the player already earned
+    achievement_ids = auth.get_player_achievements(player_id)
+
+    while running:
+        screen.fill((20, 20, 20))
+
+        draw_text(f"{username}'s Achievements", title_font, GOLD, 300, 100)
+
+        if len(achievement_ids) == 0:
+            draw_text("No achievements unlocked yet.", main_font, WHITE, 420, 250)
+        else:
+            y = 200
+            for ach_id in achievement_ids:
+                name = auth.get_achievement_name(ach_id)
+                draw_text(f"• {name}", main_font, WHITE,  300, y)
+                y += 40
+
+        draw_text("Click anywhere to return", main_font, RED, 400, 550)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                return  # Back to menu
+
+        pygame.display.update()
 
 # --- NEW: Difficulty Select Screen (Updated) ---
 def difficulty_screen():
@@ -767,14 +834,19 @@ def main_game(player_id, username, difficulty_id):
     sys.exit()
 
 # --- Main Driver ---
-if __name__ == "__main__":
-    # 1. Show login screen.
-    # This loop won't exit until login is successful.
-    player_id, username = login_register_screen()
-    
-    # 2. Show difficulty selection screen
-    difficulty_id = difficulty_screen()
+pid_uname = login_register_screen()
+if pid_uname is None:
+    pygame.quit()
+    sys.exit()
 
-    # 3. Start the main game
-    print(f"Starting game for PlayerID: {player_id}, User: {username}, Difficulty: {difficulty_id}")
-    main_game(player_id, username, difficulty_id)
+player_id, username = pid_uname
+
+while True:
+    choice = post_login_menu(player_id, username)
+
+    if choice == "play":
+        difficulty_id = difficulty_screen()
+        main_game(player_id, username, difficulty_id)
+
+    elif choice == "achievements":
+        achievements_screen(player_id, username)
