@@ -8,7 +8,7 @@ from hmac import compare_digest # For securely comparing hashes
 DB_HOST = "localhost"
 DB_NAME = "pool_game_db"
 DB_USER = "root"
-DB_PASS = "roo123"  # <-- !!! REMEMBER to change this !!!
+DB_PASS = "@17Augu$t2ko5!"  # <-- !!! REMEMBER to change this !!!
 
 def get_db_connection():
     """Helper function to create a database connection."""
@@ -123,7 +123,26 @@ def check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_wi
         conn.close()
         # --- NEW: Return the list of achievements ---
         return newly_earned
+def get_achievement_name(achievement_id):
+    """
+    Returns the human-readable name for an AchievementID.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        return "Unknown Achievement"
 
+    cursor = conn.cursor()
+    try:
+        sql = "SELECT Name FROM Achievement WHERE AchievementID = %s"
+        cursor.execute(sql, (achievement_id,))
+        result = cursor.fetchone()
+        return result[0] if result else "Unknown Achievement"
+    except Error as e:
+        print(f"Error fetching achievement name: {e}")
+        return "Unknown Achievement"
+    finally:
+        cursor.close()
+        conn.close()
 
 
 
