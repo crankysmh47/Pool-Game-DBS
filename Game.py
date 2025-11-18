@@ -171,6 +171,7 @@ def post_login_menu(player_id, username):
     # Buttons
     play_button = pygame.Rect(450, 250, 300, 70)
     achieve_button = pygame.Rect(450, 350, 300, 70)
+    change_pass_button = pygame.Rect(450, 450, 300, 70)
 
     while running:
         screen.fill((30, 30, 30))
@@ -183,8 +184,9 @@ def post_login_menu(player_id, username):
         pygame.draw.rect(screen, GREEN, achieve_button)
 
         draw_text("PLAY", menu_font, WHITE, play_button.x + 85, play_button.y + 18)
-        draw_text("ACHIEVEMENTS", menu_font, WHITE,
-                  achieve_button.x + 15, achieve_button.y + 18)
+        draw_text("ACHIEVEMENTS", menu_font, WHITE,achieve_button.x + 15, achieve_button.y + 18)
+        pygame.draw.rect(screen, RED, change_pass_button)
+        draw_text("CHANGE PASSWORD", menu_font, WHITE, change_pass_button.x + 5, change_pass_button.y + 18)
 
         for event in pygame.event.get():  # <-- THIS IS LINE 189
             if event.type == pygame.QUIT:
@@ -199,6 +201,8 @@ def post_login_menu(player_id, username):
 
                 if achieve_button.collidepoint((mx, my)):
                     return "achievements"
+                if change_pass_button.collidepoint((mx, my)):
+                    change_password_screen(player_id, username)
 
         pygame.display.update()
 
@@ -383,6 +387,7 @@ def change_password_screen(player_id, username):
     input_box_current = pygame.Rect(450, 250, 300, 50)
     input_box_new = pygame.Rect(450, 330, 300, 50)
     save_button = pygame.Rect(450, 420, 300, 60)
+    return_button = pygame.Rect(450, 500, 300, 60)
 
     while True:
         screen.fill((20, 20, 20))
@@ -399,6 +404,8 @@ def change_password_screen(player_id, username):
         # Save button
         pygame.draw.rect(screen, GREEN, save_button)
         draw_text("SAVE PASSWORD", main_font, BLACK, save_button.x+40, save_button.y+15)
+        pygame.draw.rect(screen, BLUE, return_button)
+        draw_text("RETURN", main_font, WHITE, return_button.x + 95, return_button.y + 15)
 
         draw_text(msg, main_font, RED, 450, 500)
 
@@ -430,6 +437,8 @@ def change_password_screen(player_id, username):
                         conn.commit()
                         cursor.close(); conn.close()
                         msg = "Password changed successfully!"
+                elif return_button.collidepoint(event.pos):
+                    return  # Go back to previous screen
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_BACKSPACE:
@@ -502,12 +511,12 @@ def main_game(player_id, username, difficulty_id):
 
     # --- NEW: Rules string for wrapping ---
     rules_string = (
-        "Game Rules\n"
-        "\n"
-        "* Pot all balls (1-8).\n"
-        "* Pot the Pink (9) ball last to win.\n"
-        "* Potting the Pink ball early is a loss.\n"
-        "* Potting the cue ball is a foul and adds 10s to your time.\n"
+        "Game Rules\n\n"
+        "\n\n"
+        "* Pot all balls (1-8).\n\n"
+        "* Pot the Pink (9) ball last to win.\n\n"
+        "* Potting the Pink ball early is a loss.\n\n"
+        "* Potting the cue ball is a foul and adds 10s to your time.\n\n"
         "* Win with the fastest time and fewest shots for max score."
     )
 
@@ -894,17 +903,7 @@ def main_game(player_id, username, difficulty_id):
 
             # Wait for user to quit
             # --- FINAL MENU BUTTONS ---
-            replay_button = pygame.Rect(650, 580, 200, 60)
-            exit_button = pygame.Rect(900, 580, 200, 60)
-            change_pass_button = pygame.Rect(400, 580, 200, 60)
-
-            pygame.draw.rect(screen, BLUE, replay_button)
-            pygame.draw.rect(screen, RED, exit_button)
-            pygame.draw.rect(screen, GREEN, change_pass_button)
-
-            draw_text("REPLAY", main_font, WHITE, replay_button.x + 55, replay_button.y + 18)
-            draw_text("EXIT", main_font, WHITE, exit_button.x + 75, exit_button.y + 18)
-            draw_text("CHANGE PASS", main_font, WHITE, change_pass_button.x + 20, change_pass_button.y + 18)
+           ########
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -923,9 +922,7 @@ def main_game(player_id, username, difficulty_id):
                         sys.exit()
 
                     # Change password
-                    if change_pass_button.collidepoint((mx, my)):
-                        change_password_screen(player_id, username)
-
+                  #######
         # --- NEW: Achievement Popup Drawing Logic ---
         # (This draws on top of everything, including the game over screen)
          # Remove from queue
