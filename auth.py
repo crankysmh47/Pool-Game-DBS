@@ -8,7 +8,7 @@ from hmac import compare_digest # For securely comparing hashes
 DB_HOST = "localhost"
 DB_NAME = "pool_game_db"
 DB_USER = "root"
-DB_PASS = "Password"  # <-- !!! REMEMBER to change this !!!
+DB_PASS = "@17Augu$t2ko5!"  # <-- !!! REMEMBER to change this !!!
 
 def get_db_connection():
     """Helper function to create a database connection."""
@@ -88,40 +88,32 @@ def grant_achievement(player_id, achievement_id):
 # --- This is your existing Stored Procedure call (for end-of-game) ---
 # --- This is your existing Stored Procedure call (for end-of-game) ---
 def check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win):
-    """
-    Calls the master stored procedure to check all end-of-game achievements
-    and returns a list of newly granted achievements.
-    """
     conn = get_db_connection()
     if conn is None:
         print("Could not check achievements. DB connection failed.")
-        return [] # <-- Return an empty list
+        return []
 
-    # --- NEW: We must use dictionary=True to read the results ---
     cursor = conn.cursor(dictionary=True)
-    newly_earned = [] # <-- List to store achievements
+    newly_earned = []
+
     try:
-        args = (player_id, difficulty_id, timer, shots, fouls, did_win)
-        
-        # callproc returns an iterator of result sets
-        results_iterator = cursor.callproc('sp_CheckPlayerAchievements', args)
-        
-        # --- NEW: Loop to read the results ---
-        # Our procedure returns one (1) result set, so we read it.
-        for result in results_iterator:
-            if result.with_rows:
-                newly_earned = result.fetchall()
+        cursor.execute(
+            "CALL sp_CheckPlayerAchievements(%s,%s,%s,%s,%s,%s)",
+            (player_id, difficulty_id, timer, shots, fouls, did_win)
+        )
+
+        # Fetch the SELECT * FROM NewAchievements
+        newly_earned = cursor.fetchall()
 
         conn.commit()
-        print(f"Successfully checked for end-of-game achievements. {len(newly_earned)} new.")
-        
+
     except Error as e:
-        print(f"Database error checking achievements: {e}")
-        conn.rollback() 
+        print("Database error checking achievements:", e)
+        conn.rollback()
+
     finally:
         cursor.close()
         conn.close()
-        # --- NEW: Return the list of achievements ---
         return newly_earned
 def get_achievement_name(achievement_id):
     """

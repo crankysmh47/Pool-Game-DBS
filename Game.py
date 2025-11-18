@@ -209,32 +209,105 @@ def post_login_menu(player_id, username):
 def achievements_screen(player_id, username):
     running = True
 
-    # Get all achievement IDs the player already earned
-    achievement_ids = auth.get_player_achievements(player_id)
+    # Get earned achievements
+    # Get earned achievements safely
+    earned_raw = auth.get_player_achievements(player_id)
+
+    # Convert to proper integer set WITHOUT crashing
+    earned = set()
+    for row in earned_raw:
+        try:
+            if isinstance(row, int):
+                earned.add(row)
+            elif isinstance(row, tuple) and len(row) > 0:
+                earned.add(int(row[0]))
+            else:
+                earned.add(int(row))
+        except:
+            pass  # Ignore any bad values instead of crashing
+
+    # Get ALL achievements from DB
+    conn = auth.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT AchievementID, Name, Description FROM Achievement ORDER BY AchievementID")
+    all_achievements = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    # Colors
+    unlocked_color = (60, 180, 75)   # GREEN
+    locked_color = (70, 70, 70)      # DARK GREY
+    border_color = (230, 230, 230)
+
+    # UI layout
+    box_width = 900
+    box_height = 80
+    x = 150
+    start_y = 150
+
+    # SCROLL VARIABLES
+    scroll_offset = 0
+    scroll_speed = 25
+
+    # Return button
+    return_button = pygame.Rect(20, 20, 150, 50)
 
     while running:
-        screen.fill((20, 20, 20))
+        screen.fill((25, 25, 25))
+        draw_text(f"{username}'s Achievements", title_font, GOLD, 350, 70)
 
-        draw_text(f"{username}'s Achievements", title_font, GOLD, 300, 100)
+        # Draw Return Button
+        pygame.draw.rect(screen, (200, 50, 50), return_button, border_radius=8)
+        draw_text("RETURN", main_font, WHITE, return_button.x + 20, return_button.y + 10)
 
-        if len(achievement_ids) == 0:
-            draw_text("No achievements unlocked yet.", main_font, WHITE, 420, 250)
-        else:
-            y = 200
-            for ach_id in achievement_ids:
-                name = auth.get_achievement_name(ach_id)
-                draw_text(f"• {name}", main_font, WHITE,  300, y)
-                y += 40
+        y = start_y + scroll_offset
 
-        draw_text("Click anywhere to return", main_font, RED, 400, 550)
+        for ach in all_achievements:
+            ach_id = int(ach["AchievementID"])
+
+            name = ach["Name"]
+            desc = ach["Description"]
+
+            # FIXED — now unlocked achievements show correctly
+            is_unlocked = ach_id in earned
+
+            color = unlocked_color if is_unlocked else locked_color
+            text_color = WHITE if is_unlocked else (200, 200, 200)
+
+            pygame.draw.rect(screen, color, (x, y, box_width, box_height), border_radius=12)
+            pygame.draw.rect(screen, border_color, (x, y, box_width, box_height), 3, border_radius=12)
+
+            status_text = name if is_unlocked else f"{name} (Locked)"
+            draw_text(status_text, main_font, text_color, x + 15, y + 10)
+
+            desc_color = WHITE if is_unlocked else (170, 170, 170)
+            draw_text(desc, pygame.font.SysFont("Arial", 18), desc_color, x + 15, y + 45)
+
+            y += box_height + 20
+
+        # Scrollbar
+        content_height = len(all_achievements) * (box_height + 20)
+        visible_height = SCREEN_HEIGHT - start_y - 30
+
+        scrollbar_height = max(40, (visible_height / content_height) * 300)
+        scrollbar_y = 150 + (-scroll_offset / content_height) * 300
+
+        pygame.draw.rect(screen, (80, 80, 80), (1100, 150, 20, 300), border_radius=10)
+        pygame.draw.rect(screen, (180, 180, 180), (1100, scrollbar_y, 20, scrollbar_height), border_radius=10)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                pygame.quit(); sys.exit()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
-                return  # Back to menu
+                if return_button.collidepoint(event.pos):
+                    return
+
+            if event.type == pygame.MOUSEWHEEL:
+                scroll_offset += event.y * scroll_speed
+                max_scroll = 0
+                min_scroll = -(content_height - visible_height)
+                scroll_offset = max(min(scroll_offset, max_scroll), min_scroll)
 
         pygame.display.update()
 
@@ -473,11 +546,14 @@ def main_game(player_id, username, difficulty_id):
     
 
     earned_achievements_cache = auth.get_player_achievements(player_id)
+    SPEED_DEMON_ID=1
+    SHARP_SHOOTER_ID=2
+    POOL_SHARK_ID=3
+    HARD_CORE_ID=4
+    FIRST_VICTORY_ID=5
+    ON_THE_BOARD_ID= 6
     COMBO_ACHIEVEMENT_ID = 7   # (Pot 2+ balls in one shot)
     FIRST_POT_ID = 8           # (Pot your first ball)
-
-
-
 
 
     # Set time based on difficulty
@@ -843,6 +919,8 @@ def main_game(player_id, username, difficulty_id):
                     fouls,
                     did_win
                 )
+                # 🔥 FIX: refresh achievement cache after SQL unlocks
+                earned_achievements_cache = auth.get_player_achievements(player_id)
 
                 # Add popups for each achievement returned by SQL
                 for ach in new_achievements:
