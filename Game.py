@@ -129,6 +129,12 @@ def handle_collision(ball1, ball):
         ball.y += dy
         dx = ball.x - ball1.x
         dy = ball.y - ball1.y
+        # --- Rotation Based on Movement ---
+        if ball.is_moving:
+            movement_speed = abs(ball.speedx) + abs(ball.speedy)
+            ball.angle += movement_speed * 0.5  # Control rotation speed
+            ball.angle %= 360  # Prevent infinite values
+
         distance = math.sqrt(dx * dx + dy * dy)
         if distance < 1e-6: return
 
@@ -162,13 +168,21 @@ class Ball:
         self.color = color
         self.is_moving = False
         self.did_go = False
+        self.angle = 0  # Track rotation angle
 
     def draw(self):
         if not self.did_go:
-            img = ball_images[self.ball_id]  # Get correct ball image
-            img = pygame.transform.scale(img, (40, 40))  # Resize to match radius
-            rect = img.get_rect(center=(int(self.x), int(self.y)))
-            screen.blit(img, rect)
+            img = ball_images[self.ball_id]
+            img = pygame.transform.scale(img, (40, 40))  # Resize
+
+            # Apply rotation only when moving
+            if self.is_moving:
+                rotated_img = pygame.transform.rotate(img, self.angle)
+            else:
+                rotated_img = img  # No rotation when still
+
+            rect = rotated_img.get_rect(center=(int(self.x), int(self.y)))
+            screen.blit(rotated_img, rect)
 
 
 class Hole:
@@ -759,6 +773,12 @@ def main_game(player_id, username, difficulty_id):
             if ball.y + ball.radius > SCREEN_HEIGHT:
                 ball.y = SCREEN_HEIGHT - ball.radius
                 ball.speedy *= -1
+
+            # Update rotation angle based on movement
+            if ball.is_moving:
+                movement_speed = max(abs(ball.speedx), abs(ball.speedy))
+                ball.angle += movement_speed * 0.1  # Control rotation speed
+                ball.angle %= 360  # Prevent overflow
 
         # Collision Detection (Ball-Ball and Ball-Cue)
         for i in range(len(balls)):
