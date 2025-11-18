@@ -902,8 +902,17 @@ def main_game(player_id, username, difficulty_id):
                     draw_text(text, main_font, WHITE, 50, 200 + i * 35)
 
             # Wait for user to quit
-            # --- FINAL MENU BUTTONS ---
-           ########
+            # --- FINAL MENU BUTTONS (ADD THIS CODE) ---
+            # Create buttons
+            replay_button = pygame.Rect(650, 580, 200, 60)
+            exit_button = pygame.Rect(900, 580, 200, 60)
+
+            # Draw buttons
+            pygame.draw.rect(screen, GREEN, replay_button)
+            draw_text("REPLAY", main_font, BLACK, replay_button.x + 55, replay_button.y + 15)
+
+            pygame.draw.rect(screen, RED, exit_button)
+            draw_text("EXIT", main_font, WHITE, exit_button.x + 75, exit_button.y + 15)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -912,13 +921,11 @@ def main_game(player_id, username, difficulty_id):
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = pygame.mouse.get_pos()
 
-                    # Replay button
                     if replay_button.collidepoint((mx, my)):
-                        return "replay"
+                        return "replay"  # Restart game
 
-                    # Exit button
                     if exit_button.collidepoint((mx, my)):
-                        pygame.quit();
+                        pygame.quit()
                         sys.exit()
 
                     # Change password
