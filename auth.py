@@ -8,7 +8,7 @@ from hmac import compare_digest # For securely comparing hashes
 DB_HOST = "localhost"
 DB_NAME = "pool_game_db"
 DB_USER = "root"
-DB_PASS = "@17Augu$t2ko5!"  # <-- !!! REMEMBER to change this !!!
+DB_PASS = "Password"  # <-- !!! REMEMBER to change this !!!
 
 def get_db_connection():
     """Helper function to create a database connection."""

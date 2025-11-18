@@ -18,6 +18,19 @@ main_font = pygame.font.SysFont("Arial", 25)
 title_font = pygame.font.SysFont("Arial", 35)
 foul_font = pygame.font.SysFont("Arial", 50)
 achievement_font = pygame.font.SysFont("Arial", 20, bold=True) # Font for popups
+# ---- Load Ball Images ----
+ball_images = {
+    1: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball1.png"),
+    2: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball2.png"),
+    3: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball3.png"),
+    4: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball4.png"),
+    5: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball5.png"),
+    6: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball6.png"),
+    7: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball7.png"),
+    8: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball8.png"),
+    9: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball9.png"),
+    0: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/cue.png")  # cue ball
+}
 
 # --- Colors ---
 SKYBLUE = (135, 206, 235)
@@ -152,7 +165,11 @@ class Ball:
 
     def draw(self):
         if not self.did_go:
-            pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
+            img = ball_images[self.ball_id]  # Get correct ball image
+            img = pygame.transform.scale(img, (40, 40))  # Resize to match radius
+            rect = img.get_rect(center=(int(self.x), int(self.y)))
+            screen.blit(img, rect)
+
 
 class Hole:
     def __init__(self, x, y):
@@ -587,22 +604,21 @@ def main_game(player_id, username, difficulty_id):
 
     # --- NEW: Rules string for wrapping ---
     rules_string = (
-        "Game Rules\n\n"
-        "\n\n"
-        "* Pot all balls (1-8).\n\n"
-        "* Pot the Pink (9) ball last to win.\n\n"
-        "* Potting the Pink ball early is a loss.\n\n"
-        "* Potting the cue ball is a foul and adds 10s to your time.\n\n"
+        "Game Rules\n\n\n"
+        "\n\n\n"
+        "* Pot all balls (1-8).\n\n\n"
+        "* Pot the Pink (9) ball last to win.\n\n\n"
+        "* Potting the Pink ball early is a loss.\n\n\n"
+        "* Potting the cue ball is a foul and adds 10s to your time.\n\n\n"
         "* Win with the fastest time and fewest shots for max score."
     )
 
     # --- Setup Balls ---
-    # NOTE: Using global SCREEN_WIDTH/HEIGHT now
     startX = SCREEN_WIDTH - (SCREEN_WIDTH - TABLE_START_X) / 4
     startY = SCREEN_HEIGHT / 2
-    
-    cue = Ball( (SCREEN_WIDTH - TABLE_START_X) / 4 + TABLE_START_X, SCREEN_HEIGHT / 2, WHITE)
-    
+
+    cue = Ball((SCREEN_WIDTH - TABLE_START_X) / 4 + TABLE_START_X, SCREEN_HEIGHT / 2, WHITE)
+
     spacing_factor = 1.1
     balls = [
         Ball(startX - 60 * spacing_factor, startY, YELLOW),
@@ -613,9 +629,15 @@ def main_game(player_id, username, difficulty_id):
         Ball(startX - 20 * spacing_factor, startY - 75 * spacing_factor, DARKGREEN),
         Ball(startX - 40 * spacing_factor, startY + 37 * spacing_factor, BROWN),
         Ball(startX, startY + 37 * spacing_factor, BLACK),
-        Ball(startX - 20 * spacing_factor, startY, PINK) # The winning ball
+        Ball(startX - 20 * spacing_factor, startY, PINK)
     ]
-    
+
+    # --- Assign Ball IDs (1–9) ---
+    cue.ball_id = 0  # Cue ball is ID 0
+
+    for i, ball in enumerate(balls, start=1):
+        ball.ball_id = i  # ID matches real pool balls
+
     # --- Setup Holes ---
     # NOTE: Corrected list with 6 holes, using global vars
     holes = [
