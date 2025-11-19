@@ -137,6 +137,66 @@ def get_achievement_name(achievement_id):
         conn.close()
 
 
+# --- ADD TO auth.py ---
+
+def get_all_achievements_list():
+    """
+    Fetches the full list of available achievements (ID, Name, Description).
+    Used for the Achievements Screen UI.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        return []
+
+    cursor = conn.cursor(dictionary=True)
+    results = []
+    try:
+        cursor.execute("SELECT AchievementID, Name, Description FROM Achievement ORDER BY AchievementID")
+        results = cursor.fetchall()
+    except Error as e:
+        print(f"Error fetching all achievements: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+        return results
+
+
+def update_password(player_id, new_password):
+    """
+    Securely updates a player's password by generating a new salt and hash.
+    """
+    if not new_password:
+        return {'success': False, 'message': "Password cannot be empty."}
+
+    # 1. Generate new security credentials
+    salt = os.urandom(16)
+    password_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        new_password.encode('utf-8'),
+        salt,
+        100000
+    )
+
+    salt_hex = salt.hex()
+    hash_hex = password_hash.hex()
+
+    # 2. Update Database
+    conn = get_db_connection()
+    if conn is None:
+        return {'success': False, 'message': "Database connection failed."}
+
+    cursor = conn.cursor()
+    try:
+        sql = "UPDATE Player SET PasswordHash=%s, Salt=%s WHERE PlayerID=%s"
+        cursor.execute(sql, (hash_hex, salt_hex, player_id))
+        conn.commit()
+        return {'success': True, 'message': "Password changed successfully!"}
+    except Error as e:
+        return {'success': False, 'message': f"Database error: {e}"}
+    finally:
+        cursor.close()
+        conn.close()
+
 
 
 

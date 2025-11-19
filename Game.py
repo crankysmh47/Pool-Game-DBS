@@ -20,16 +20,16 @@ foul_font = pygame.font.SysFont("Arial", 50)
 achievement_font = pygame.font.SysFont("Arial", 20, bold=True) # Font for popups
 # ---- Load Ball Images ----
 ball_images = {
-    1: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball1.png"),
-    2: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball2.png"),
-    3: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball3.png"),
-    4: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball4.png"),
-    5: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball5.png"),
-    6: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball6.png"),
-    7: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball7.png"),
-    8: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball8.png"),
-    9: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/ball9.png"),
-    0: pygame.image.load("C:/Users/Administrator/Downloads/Pool-Game-DBS/Pool-Game-DBS/assets/cue.png")  # cue ball
+    1: pygame.image.load("assets/ball1.png"),
+    2: pygame.image.load("assets/ball2.png"),
+    3: pygame.image.load("assets/ball3.png"),
+    4: pygame.image.load("assets/ball4.png"),
+    5: pygame.image.load("assets/ball5.png"),
+    6: pygame.image.load("assets/ball6.png"),
+    7: pygame.image.load("assets/ball7.png"),
+    8: pygame.image.load("assets/ball8.png"),
+    9: pygame.image.load("assets/ball9.png"),
+    0: pygame.image.load("assets/cue.png")  # cue ball
 }
 
 # --- Colors ---
@@ -237,41 +237,35 @@ def post_login_menu(player_id, username):
 
         pygame.display.update()
 
+
 def achievements_screen(player_id, username):
     running = True
 
-    # Get earned achievements
+    # --- REPLACED SQL WITH AUTH CALL ---
     # Get earned achievements safely
     earned_raw = auth.get_player_achievements(player_id)
 
-    # Convert to proper integer set WITHOUT crashing
+    # Convert to proper integer set
     earned = set()
     for row in earned_raw:
         try:
-            if isinstance(row, int):
-                earned.add(row)
-            elif isinstance(row, tuple) and len(row) > 0:
-                earned.add(int(row[0]))
-            else:
-                earned.add(int(row))
+            # Handle both tuple (id,) and int cases
+            val = row[0] if isinstance(row, (tuple, list)) else row
+            earned.add(int(val))
         except:
-            pass  # Ignore any bad values instead of crashing
+            pass
 
-    # Get ALL achievements from DB
-    conn = auth.get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT AchievementID, Name, Description FROM Achievement ORDER BY AchievementID")
-    all_achievements = cursor.fetchall()
-    cursor.close()
-    conn.close()
+            # Get ALL achievements using the new auth function
+    all_achievements = auth.get_all_achievements_list()
+    # -----------------------------------
 
     # Colors
-    unlocked_color = (60, 180, 75)   # GREEN
-    locked_color = (70, 70, 70)      # DARK GREY
+    unlocked_color = (60, 180, 75)  # GREEN
+    locked_color = (70, 70, 70)  # DARK GREY
     border_color = (230, 230, 230)
 
     # UI layout
-    box_width = 900
+    box_width = 1000
     box_height = 80
     x = 150
     start_y = 150
@@ -295,11 +289,9 @@ def achievements_screen(player_id, username):
 
         for ach in all_achievements:
             ach_id = int(ach["AchievementID"])
-
             name = ach["Name"]
             desc = ach["Description"]
 
-            # FIXED — now unlocked achievements show correctly
             is_unlocked = ach_id in earned
 
             color = unlocked_color if is_unlocked else locked_color
@@ -316,19 +308,22 @@ def achievements_screen(player_id, username):
 
             y += box_height + 20
 
-        # Scrollbar
+        # Scrollbar logic
         content_height = len(all_achievements) * (box_height + 20)
         visible_height = SCREEN_HEIGHT - start_y - 30
 
-        scrollbar_height = max(40, (visible_height / content_height) * 300)
-        scrollbar_y = 150 + (-scroll_offset / content_height) * 300
+        # Only draw scrollbar if content overflows
+        if content_height > visible_height:
+            scrollbar_height = max(40, (visible_height / content_height) * 300)
+            scrollbar_y = 150 + (-scroll_offset / content_height) * 300
 
-        pygame.draw.rect(screen, (80, 80, 80), (1100, 150, 20, 300), border_radius=10)
-        pygame.draw.rect(screen, (180, 180, 180), (1100, scrollbar_y, 20, scrollbar_height), border_radius=10)
+            pygame.draw.rect(screen, (80, 80, 80), (1100, 150, 20, 300), border_radius=10)
+            pygame.draw.rect(screen, (180, 180, 180), (1100, scrollbar_y, 20, scrollbar_height), border_radius=10)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                pygame.quit();
+                sys.exit()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if return_button.collidepoint(event.pos):
@@ -337,11 +332,10 @@ def achievements_screen(player_id, username):
             if event.type == pygame.MOUSEWHEEL:
                 scroll_offset += event.y * scroll_speed
                 max_scroll = 0
-                min_scroll = -(content_height - visible_height)
+                min_scroll = -(content_height - visible_height) if content_height > visible_height else 0
                 scroll_offset = max(min(scroll_offset, max_scroll), min_scroll)
 
         pygame.display.update()
-
 # --- NEW: Difficulty Select Screen (Updated) ---
 def difficulty_screen():
     """
@@ -482,6 +476,7 @@ def login_register_screen():
         pygame.display.flip()
         clock.tick(30)
 
+
 def change_password_screen(player_id, username):
     current_pass = ""
     new_pass = ""
@@ -499,15 +494,15 @@ def change_password_screen(player_id, username):
 
         draw_text("Current Password:", main_font, WHITE, 300, 260)
         pygame.draw.rect(screen, WHITE, input_box_current, 2)
-        draw_text('*' * len(current_pass), main_font, WHITE, input_box_current.x+5, input_box_current.y+5)
+        draw_text('*' * len(current_pass), main_font, WHITE, input_box_current.x + 5, input_box_current.y + 5)
 
         draw_text("New Password:", main_font, WHITE, 300, 340)
         pygame.draw.rect(screen, WHITE, input_box_new, 2)
-        draw_text('*' * len(new_pass), main_font, WHITE, input_box_new.x+5, input_box_new.y+5)
+        draw_text('*' * len(new_pass), main_font, WHITE, input_box_new.x + 5, input_box_new.y + 5)
 
         # Save button
         pygame.draw.rect(screen, GREEN, save_button)
-        draw_text("SAVE PASSWORD", main_font, BLACK, save_button.x+40, save_button.y+15)
+        draw_text("SAVE PASSWORD", main_font, BLACK, save_button.x + 40, save_button.y + 15)
         pygame.draw.rect(screen, BLUE, return_button)
         draw_text("RETURN", main_font, WHITE, return_button.x + 95, return_button.y + 15)
 
@@ -515,7 +510,8 @@ def change_password_screen(player_id, username):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                pygame.quit();
+                sys.exit()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if input_box_current.collidepoint(event.pos):
@@ -523,24 +519,20 @@ def change_password_screen(player_id, username):
                 elif input_box_new.collidepoint(event.pos):
                     active = "new"
                 elif save_button.collidepoint(event.pos):
-                    # Try login with old password first
+                    # 1. Verify old password
                     login_check = auth.login_player(username, current_pass)
                     if not login_check["success"]:
                         msg = "Current password incorrect."
                     else:
-                        # Change password manually
-                        result = auth.register_player(username + "_temp", "abc")  # workaround
-                        conn = auth.get_db_connection()
-                        cursor = conn.cursor()
-                        import hashlib, os
-                        salt = os.urandom(16).hex()
-                        new_hash = hashlib.pbkdf2_hmac('sha256', new_pass.encode(), bytes.fromhex(salt), 100000).hex()
+                        # --- REPLACED SQL WITH AUTH CALL ---
+                        result = auth.update_password(player_id, new_pass)
+                        msg = result['message']
+                        if result['success']:
+                            # Clear fields on success
+                            current_pass = ""
+                            new_pass = ""
+                        # -----------------------------------
 
-                        sql = "UPDATE Player SET PasswordHash=%s, Salt=%s WHERE PlayerID=%s"
-                        cursor.execute(sql, (new_hash, salt, player_id))
-                        conn.commit()
-                        cursor.close(); conn.close()
-                        msg = "Password changed successfully!"
                 elif return_button.collidepoint(event.pos):
                     return  # Go back to previous screen
 
@@ -557,81 +549,61 @@ def change_password_screen(player_id, username):
                         new_pass += event.unicode
 
         pygame.display.flip()
-
 # --- Main Game Function (Updated) ---
 
 
 def main_game(player_id, username, difficulty_id):
     """
-    The main game loop, translated from your C++ main().
-    Uses fixed 1500x800 resolution.
+    Main game loop with Real-Time Achievement Popups.
     """
-    
+
     # --- Game State Variables ---
     game_over = False
-    game_over_saved = False # Flag to ensure we only save the score once
+    game_over_saved = False
     did_win = False
     show_message = False
     message_timer = 0
     timer = 0.0
-    
 
+    # --- ACHIEVEMENT SETUP ---
+    # Load what the player already has so we don't give it twice
     earned_achievements_cache = auth.get_player_achievements(player_id)
-    SPEED_DEMON_ID=1
-    SHARP_SHOOTER_ID=2
-    POOL_SHARK_ID=3
-    HARD_CORE_ID=4
-    FIRST_VICTORY_ID=5
-    ON_THE_BOARD_ID= 6
-    COMBO_ACHIEVEMENT_ID = 7   # (Pot 2+ balls in one shot)
-    FIRST_POT_ID = 8           # (Pot your first ball)
+    achievement_popup_queue = []  # Queue to store popups waiting to show
 
+    # Achievement IDs (Must match your Database)
+    FIRST_POT_ID = 8
+    COMBO_ACHIEVEMENT_ID = 7
 
     # Set time based on difficulty
-    if difficulty_id == 1: # Easy
+    if difficulty_id == 1:  # Easy
         countdown_time = 500
         aiming_level = 'easy'
         hole_radius_change = 5
         difficulty_factor = 1.0
-    elif difficulty_id == 2: # Medium
+    elif difficulty_id == 2:  # Medium
         countdown_time = 400
         aiming_level = 'medium'
         hole_radius_change = 0
         difficulty_factor = 1.35
-    else: # Hard
+    else:  # Hard
         countdown_time = 300
         aiming_level = 'hard'
         hole_radius_change = -5
         difficulty_factor = 1.75
-    
 
-    countdown_finished = False
     score = 0.0
     shots = 0
-    
     fouls = 0
-    balls_potted = 0
-    total_balls_potted_game = 0
-    
-    achievement_popup_queue = []
 
+    # Track potting stats
+    balls_potted_this_shot = 0  # Resets every shot
+    total_balls_potted_game = 0  # Tracks total for the session
 
-    # --- NEW: Rules string for wrapping ---
-    rules_string = (
-        "Game Rules\n\n\n"
-        "\n\n\n"
-        "* Pot all balls (1-8).\n\n\n"
-        "* Pot the Pink (9) ball last to win.\n\n\n"
-        "* Potting the Pink ball early is a loss.\n\n\n"
-        "* Potting the cue ball is a foul and adds 10s to your time.\n\n\n"
-        "* Win with the fastest time and fewest shots for max score."
-    )
-
-    # --- Setup Balls ---
+    # --- Setup Balls & Holes (Standard Setup) ---
     startX = SCREEN_WIDTH - (SCREEN_WIDTH - TABLE_START_X) / 4
     startY = SCREEN_HEIGHT / 2
-
     cue = Ball((SCREEN_WIDTH - TABLE_START_X) / 4 + TABLE_START_X, SCREEN_HEIGHT / 2, WHITE)
+    cue.ball_id = 0
 
     spacing_factor = 1.1
     balls = [
@@ -645,15 +617,8 @@ def main_game(player_id, username, difficulty_id):
         Ball(startX, startY + 37 * spacing_factor, BLACK),
         Ball(startX - 20 * spacing_factor, startY, PINK)
     ]
+    for i, ball in enumerate(balls, start=1): ball.ball_id = i
 
-    # --- Assign Ball IDs (1–9) ---
-    cue.ball_id = 0  # Cue ball is ID 0
-
-    for i, ball in enumerate(balls, start=1):
-        ball.ball_id = i  # ID matches real pool balls
-
-    # --- Setup Holes ---
-    # NOTE: Corrected list with 6 holes, using global vars
     holes = [
         Hole(TABLE_START_X + 3, 3),
         Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, 3),
@@ -662,405 +627,288 @@ def main_game(player_id, username, difficulty_id):
         Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, SCREEN_HEIGHT - 3),
         Hole(SCREEN_WIDTH - 3, SCREEN_HEIGHT - 3)
     ]
-    for hole in holes:
-        hole.radius += hole_radius_change
-    
+    for hole in holes: hole.radius += hole_radius_change
+
     is_aiming = False
     running = True
-    music_playing = False # <-- ADDED: Flag to track music state
-    
+    music_playing = False
+    countdown_finished = False
+
     # --- Main Game Loop ---
     while running:
-        
-        # --- NEW: Music Control Logic ---
-        if shots == 0:
-            if not music_playing:
-                try:
-                    pygame.mixer.music.play(-1) # Start looping
-                    music_playing = True
-                except pygame.error:
-                    print("Could not play music.")
+        delta_time = clock.tick(60) / 1000.0
 
-        else: # shots > 0
-            if music_playing:
-                pygame.mixer.music.stop()
-                music_playing = False
-        # --- End of Music Control Logic ---
+        # Music Logic
+        if shots == 0 and not music_playing:
+            try:
+                pygame.mixer.music.play(-1)
+                music_playing = True
+            except:
+                pass
+        elif shots > 0 and music_playing:
+            pygame.mixer.music.stop()
+            music_playing = False
 
-        delta_time = clock.tick(60) / 1000.0 # Time in seconds since last frame
-        
-        # --- NEW: Flag to play sound only once per frame ---
         collision_sound_played_this_frame = False
-        potting_sound_played_this_frame = False # <-- ADDED
+        potting_sound_played_this_frame = False
 
         # --- Event Handling ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            
+
             if not cue.is_moving and not game_over:
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # Left click down
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     is_aiming = True
-                    balls_potted = 0
-                
-                if event.type == pygame.MOUSEBUTTONUP and event.button == 1: # Left click up
+                    balls_potted_this_shot = 0  # Reset pot counter for new shot
+
+                if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                     if is_aiming:
                         is_aiming = False
                         mouse_pos = event.pos
                         dx = cue.x - mouse_pos[0]
                         dy = cue.y - mouse_pos[1]
-                        
                         cue.speedx = dx * 2.5
                         cue.speedy = dy * 2.5
                         cue.is_moving = True
                         shots += 1
-                        # play_sound(collision_sound) # <-- Replaced with flag
-                        collision_sound_played_this_frame = True # Play on first shot
+                        collision_sound_played_this_frame = True
 
-        # --- Game Logic Updates ---
-        
-        # Update Cue Position
+                        # --- Physics Updates ---
+        # (Simplified for brevity - keep your existing physics code here)
         cue.x += cue.speedx * delta_time
         cue.y += cue.speedy * delta_time
-        cue.speedx *= 0.99 # Friction
+        cue.speedx *= 0.99
         cue.speedy *= 0.99
-
-        if abs(cue.speedx) < 5 and abs(cue.speedy) < 5: # Increased threshold
-            cue.speedx = 0
-            cue.speedy = 0
+        if abs(cue.speedx) < 5 and abs(cue.speedy) < 5:
+            cue.speedx, cue.speedy = 0, 0
             cue.is_moving = False
         else:
-            cue.is_moving = True # Ensure it's marked as moving
+            cue.is_moving = True
 
-        # Cue Collision with Table Boundaries (Using width/height)
-        if cue.x - cue.radius < TABLE_START_X:
-            cue.x = TABLE_START_X + cue.radius
-            cue.speedx *= -1
-        if cue.x + cue.radius > SCREEN_WIDTH:
-            cue.x = SCREEN_WIDTH - cue.radius
-            cue.speedx *= -1
-        if cue.y - cue.radius < 0:
-            cue.y = cue.radius
-            cue.speedy *= -1
-        if cue.y + cue.radius > SCREEN_HEIGHT:
-            cue.y = SCREEN_HEIGHT - cue.radius
-            cue.speedy *= -1
+        # Collisions
+        if cue.x - cue.radius < TABLE_START_X: cue.speedx *= -1; cue.x = TABLE_START_X + cue.radius
+        if cue.x + cue.radius > SCREEN_WIDTH: cue.speedx *= -1; cue.x = SCREEN_WIDTH - cue.radius
+        if cue.y - cue.radius < 0: cue.speedy *= -1; cue.y = cue.radius
+        if cue.y + cue.radius > SCREEN_HEIGHT: cue.speedy *= -1; cue.y = SCREEN_HEIGHT - cue.radius
 
-        # Update Ball Positions
         for ball in balls:
             ball.x += ball.speedx * delta_time
             ball.y += ball.speedy * delta_time
-            ball.speedx *= 0.99
+            ball.speedx *= 0.99;
             ball.speedy *= 0.99
-
-            if abs(ball.speedx) < 5 and abs(ball.speedy) < 5: # Increased threshold
-                ball.speedx = 0
-                ball.speedy = 0
+            if abs(ball.speedx) < 5 and abs(ball.speedy) < 5:
+                ball.speedx, ball.speedy = 0, 0
                 ball.is_moving = False
             else:
-                ball.is_moving = True # Ensure it's marked as moving
+                ball.is_moving = True
 
-            # Ball Collision with Table Boundaries (Using width/height)
-            if ball.x - ball.radius < TABLE_START_X:
-                ball.x = TABLE_START_X + ball.radius
-                ball.speedx *= -1
-            if ball.x + ball.radius > SCREEN_WIDTH:
-                ball.x = SCREEN_WIDTH - ball.radius
-                ball.speedx *= -1
-            if ball.y - ball.radius < 0:
-                ball.y = ball.radius
-                ball.speedy *= -1
-            if ball.y + ball.radius > SCREEN_HEIGHT:
-                ball.y = SCREEN_HEIGHT - ball.radius
-                ball.speedy *= -1
+            # Wall Collisions
+            if ball.x - ball.radius < TABLE_START_X: ball.speedx *= -1; ball.x = TABLE_START_X + ball.radius
+            if ball.x + ball.radius > SCREEN_WIDTH: ball.speedx *= -1; ball.x = SCREEN_WIDTH - ball.radius
+            if ball.y - ball.radius < 0: ball.speedy *= -1; ball.y = ball.radius
+            if ball.y + ball.radius > SCREEN_HEIGHT: ball.speedy *= -1; ball.y = SCREEN_HEIGHT - ball.radius
 
-            # Update rotation angle based on movement
-            if ball.is_moving:
-                movement_speed = max(abs(ball.speedx), abs(ball.speedy))
-                ball.angle += movement_speed * 0.1  # Control rotation speed
-                ball.angle %= 360  # Prevent overflow
+            if ball.is_moving: ball.angle += (abs(ball.speedx) + abs(ball.speedy)) * 0.1
 
-        # Collision Detection (Ball-Ball and Ball-Cue)
+        # Ball-Ball & Ball-Hole Interactions
         for i in range(len(balls)):
-            # Check only if ball 'i' is not potted
             if not balls[i].did_go:
+                # Ball-Ball
                 for j in range(i + 1, len(balls)):
-                    # Check only if ball 'j' is not potted
-                    if not balls[j].did_go and \
-                       check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (balls[j].x, balls[j].y), balls[j].radius):
+                    if not balls[j].did_go and check_collision_circles((balls[i].x, balls[i].y), balls[i].radius,
+                                                                       (balls[j].x, balls[j].y), balls[j].radius):
                         handle_collision(balls[i], balls[j])
-                        # --- MODIFIED: Only set flag if balls are actually moving ---
-                        if balls[i].is_moving or balls[j].is_moving:
-                            collision_sound_played_this_frame = True
+                        if balls[i].is_moving or balls[j].is_moving: collision_sound_played_this_frame = True
 
+                # Cue-Ball
                 if check_collision_circles((cue.x, cue.y), cue.radius, (balls[i].x, balls[i].y), balls[i].radius):
                     handle_collision(cue, balls[i])
-                    # --- MODIFIED: Only set flag if balls are actually moving ---
-                    if cue.is_moving or balls[i].is_moving:
-                        collision_sound_played_this_frame = True
+                    if cue.is_moving or balls[i].is_moving: collision_sound_played_this_frame = True
 
-                # Ball-Hole Collision
+                # Ball-Hole
                 for hole in holes:
-                    if check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (hole.x, hole.y), hole.radius):
-                        # --- MODIFIED: Only play sound if ball hasn't been potted yet ---
-                        if not balls[i].did_go:
-                            potting_sound_played_this_frame = True
-                        balls_potted += 1
+                    if check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (hole.x, hole.y),
+                                               hole.radius):
+                        if not balls[i].did_go: potting_sound_played_this_frame = True
+
+                        # --- IMPORTANT: COUNT THE POT ---
+                        balls_potted_this_shot += 1
                         balls[i].did_go = True
-                        balls[i].x = (i + 1) * -5000  # Move off-screen
-                        balls[i].y = (i + 1) * -5000
+                        balls[i].x, balls[i].y = -5000, -5000
                         balls[i].speedx, balls[i].speedy = 0, 0
                         balls[i].is_moving = False
-                        
-        # Cue-Hole Collision (Foul)
+
+        # Foul Logic
         for hole in holes:
             if check_collision_circles((cue.x, cue.y), cue.radius, (hole.x, hole.y), hole.radius):
-                # --- MODIFIED: Only play sound if cue is actually moving ---
-                if cue.is_moving:
-                    potting_sound_played_this_frame = True
+                if cue.is_moving: potting_sound_played_this_frame = True
                 cue.x = (SCREEN_WIDTH - TABLE_START_X) / 4 + TABLE_START_X
                 cue.y = SCREEN_HEIGHT / 2
-                cue.speedx, cue.speedy = 0, 0
-                cue.is_moving = False # Stop it from moving
-                timer += 10  # 10 second penalty
-                show_message = True
-                message_timer = 0
+                cue.speedx, cue.speedy = 0, 0;
+                cue.is_moving = False
+                timer += 10;
+                show_message = True;
+                message_timer = 0;
                 fouls += 1
-                
-        # --- NEW: Play collision sound once if any collision occurred ---
-        if collision_sound_played_this_frame:
-            play_sound(collision_sound)
-        
-        # --- NEW: Play potting sound once if any pot occurred ---
-        if potting_sound_played_this_frame:
-            play_sound(potting_sound)
 
-        # Timer and Game Over Logic
-        if not game_over:
-            if shots > 0:
-                timer += delta_time
-        
+        if collision_sound_played_this_frame: play_sound(collision_sound)
+        if potting_sound_played_this_frame: play_sound(potting_sound)
+
+        if not game_over and shots > 0: timer += delta_time
+
         remaining_time = countdown_time - timer
         if remaining_time <= 0 and not countdown_finished:
-            countdown_finished = True
-            game_over = True
-            did_win = False # Explicitly set loss
-            score = 0       # Explicitly set score
+            countdown_finished = True;
+            game_over = True;
+            did_win = False;
+            score = 0;
             remaining_time = 0
 
-        # --- Drawing Code ---
-        screen.fill(SKYBLUE) # Background color
-        
-        # Draw table boundaries (Using width/height)
-        pygame.draw.rect(screen, SKYBLUE, (TABLE_START_X, 0, SCREEN_WIDTH - TABLE_START_X, SCREEN_HEIGHT))
-        
-        # Draw left info panel
-        pygame.draw.rect(screen, BLACK, (0, 0, TABLE_START_X, SCREEN_HEIGHT))
-        
-        if not game_over:
-            # Draw baulk line (Using width/height)
-            pygame.draw.line(screen, WHITE, (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, 0), (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, SCREEN_HEIGHT), 1)
-            pygame.draw.circle(screen, WHITE, (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, SCREEN_HEIGHT / 2), 75, 1) # 'D'
+        # =================================================================================
+        # --- MID-GAME ACHIEVEMENT CHECKER ---
+        # This runs when balls stop moving. This is where we catch Combo/First Pot
+        # =================================================================================
 
-            draw_text(f"Player: {username}", title_font, RED, 50, 50)
-            
-            if shots == 0:
-                # --- NEW: Use text wrapping ---
-                # Define the rectangle for the rules text
-                rules_rect = pygame.Rect(10, 150, TABLE_START_X - 20, SCREEN_HEIGHT - 200)
-                draw_text_wrapped(screen, rules_string, main_font, WHITE, rules_rect)
-            
-            if show_message:
-                message_timer += delta_time
-                draw_text("FOUL", foul_font, RED, 700, 400)
-                draw_text("-10 seconds", foul_font, RED, 700, 450)
-                if message_timer >= 2:
-                    show_message = False
-                    message_timer = 0
-            
-            # Display Time
-            time_text = f"Time Left: {remaining_time:.2f}"
-            time_color = RED if remaining_time < 30 else BLUE
-            draw_text(time_text, title_font, time_color, 50, 100)
+        # Check if everything has stopped moving
+        all_stopped = not cue.is_moving and all(not b.is_moving for b in balls)
 
-            # Draw holes, cue, and balls
-            for hole in holes:
-                hole.draw()
-            cue.draw()
-            for ball in balls:
-                ball.draw()
-            
-            # Draw cue line
-            if is_aiming:
-                mouse_pos = pygame.mouse.get_pos()
-                if aiming_level != 'hard': # Don't draw brown stick on hard
-                    pygame.draw.line(screen, BROWN, (cue.x, cue.y), mouse_pos, 3)
-                
-                if aiming_level == 'easy': # Only draw ghost line on easy
-                    pygame.draw.line(screen, WHITE, (cue.x, cue.y), (2 * cue.x - mouse_pos[0], 2 * cue.y - mouse_pos[1]), 1)
-        
-        if not cue.is_moving and shots > 0:
-            # Check real-time achievements *only if* balls were potted this turn
-            if balls_potted > 0:
-                
-                # 1. Check for "First Potter"
-                if FIRST_POT_ID not in earned_achievements_cache and total_balls_potted_game == 0:
-                    print("Granting FIRST POTTER")
+        if all_stopped and shots > 0 and balls_potted_this_shot > 0:
+
+            # 1. Check for "First Potter" (ID: 8)
+            # Condition: Haven't potted anything before this shot, but potted something now
+            if total_balls_potted_game == 0:
+                if FIRST_POT_ID not in earned_achievements_cache:
+                    print("Unlocking: First Potter")
                     auth.grant_achievement(player_id, FIRST_POT_ID)
                     earned_achievements_cache.add(FIRST_POT_ID)
-                    achievement_popup_queue.append({"text": "First Potter!", "timer": 0}) # Add name to popup queue
-                
-                # 2. Check for "Combo Shot"
-                if COMBO_ACHIEVEMENT_ID not in earned_achievements_cache and balls_potted >= 2:
-                    print("Granting COMBO SHOT")
+                    achievement_popup_queue.append({"text": "First Potter!", "timer": 0})
+
+            # 2. Check for "Combo Shot" (ID: 7)
+            # Condition: Potted 2 or more balls in this specific turn
+            if balls_potted_this_shot >= 2:
+                if COMBO_ACHIEVEMENT_ID not in earned_achievements_cache:
+                    print("Unlocking: Combo Shot")
                     auth.grant_achievement(player_id, COMBO_ACHIEVEMENT_ID)
                     earned_achievements_cache.add(COMBO_ACHIEVEMENT_ID)
-                    achievement_popup_queue.append({"text": "Combo Shot!", "timer": 0}) # Add name to popup queue
+                    achievement_popup_queue.append({"text": "Combo Shot!", "timer": 0})
 
-                # Update total balls potted
-                total_balls_potted_game += balls_potted
-            
-            # Reset turn counter
-            total_balls_potted_game += balls_potted
-            balls_potted = 0
+            # Add to total game stats and reset turn stats
+            total_balls_potted_game += balls_potted_this_shot
+            balls_potted_this_shot = 0
 
-        # --- Game Over / Win/Loss Logic ---
+        # =================================================================================
+
+        # Game Over Logic
         pink_ball = balls[8]
         if pink_ball.did_go and not game_over:
             win = True
-            for i in range(8): # Check if all other balls (0-7) are potted
-                if not balls[i].did_go:
-                    win = False
-                    break
-            
+            for i in range(8):
+                if not balls[i].did_go: win = False; break
             game_over = True
-            if win:
-                did_win = True
-                # Score calculation
-                score = (((countdown_time - timer) / countdown_time) * 200 - (shots * 1) + 100) * difficulty_factor
-                if score < 0: score = 0
-            else:
-                did_win = False
-                score = 0
-        
-        if countdown_finished:
-            draw_text("Time's up!", foul_font, RED, 700, 400)
+            did_win = win
+            if win: score = (((countdown_time - timer) / countdown_time) * 200 - (shots * 1) + 100) * difficulty_factor
+            if score < 0: score = 0
 
-        if game_over:
-            
-            # --- SAVE SCORE (Runs only ONCE) ---
-            if not game_over_saved:
-                print("Game over. Saving score...")
-                auth.save_game_session(player_id, difficulty_id, score, did_win)
-                # Run the stored procedure and capture any new achievements
-                new_achievements = auth.check_all_achievements(
-                    player_id,
-                    difficulty_id,
-                    timer,
-                    shots,
-                    fouls,
-                    did_win
-                )
-                # 🔥 FIX: refresh achievement cache after SQL unlocks
-                earned_achievements_cache = auth.get_player_achievements(player_id)
+        # Save Game Logic (End of Game)
+        if game_over and not game_over_saved:
+            auth.save_game_session(player_id, difficulty_id, score, did_win)
+            new_achievements = auth.check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win)
+            earned_achievements_cache = auth.get_player_achievements(player_id)
 
-                # Add popups for each achievement returned by SQL
-                for ach in new_achievements:
-                    achievement_name = ach["Name"]
-                    achievement_id = ach["AchievementID"]
+            # Add End-Game achievements to queue
+            for ach in new_achievements:
+                if ach["AchievementID"] not in earned_achievements_cache:
+                   # auth.grant_achievement(player_id,ach['AchievementID'])# Avoid double popup
+                    achievement_popup_queue.append({"text": ach["Name"], "timer": 0})
 
-                    # Prevent duplicates inside game
-                    if achievement_id not in earned_achievements_cache:
-                        earned_achievements_cache.add(achievement_id)
-                        achievement_popup_queue.append({"text": achievement_name, "timer": 0})
+            game_over_saved = True
 
-                game_over_saved = True # Prevent saving again
-            # ---
-            # --- GLOBAL POPUP SYSTEM (Always visible even during gameplay) ---
-            if achievement_popup_queue:
-                popup_item = achievement_popup_queue[0]
-                popup_text = popup_item["text"]
+        # --- DRAWING ---
+        screen.fill(SKYBLUE)
+        pygame.draw.rect(screen, SKYBLUE, (TABLE_START_X, 0, SCREEN_WIDTH - TABLE_START_X, SCREEN_HEIGHT))
+        pygame.draw.rect(screen, BLACK, (0, 0, TABLE_START_X, SCREEN_HEIGHT))
 
-                popup_surf = pygame.Surface((350, 60))
-                popup_surf.set_alpha(200)
-                popup_surf.fill(BLACK)
+        if not game_over:
+            pygame.draw.line(screen, WHITE, (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, 0),
+                             (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, SCREEN_HEIGHT), 1)
+            pygame.draw.circle(screen, WHITE, (TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 4, SCREEN_HEIGHT / 2),
+                               75, 1)
 
-                popup_rect = popup_surf.get_rect(center=(SCREEN_WIDTH // 2, 70))
-                screen.blit(popup_surf, popup_rect)
+            draw_text(f"Player: {username}", title_font, RED, 50, 50)
+            draw_text(f"Time: {remaining_time:.1f}", title_font, RED if remaining_time < 30 else BLUE, 50, 100)
 
-                pygame.draw.rect(screen, GOLD, popup_rect, 3)
-                draw_text("Achievement Unlocked!", achievement_font, GOLD,
-                          popup_rect.x + 80, popup_rect.y + 5)
-                draw_text(popup_text, main_font, WHITE,
-                          popup_rect.x + (350 - main_font.size(popup_text)[0]) // 2,
-                          popup_rect.y + 32)
+            # Draw Balls & Holes
+            for hole in holes: hole.draw()
+            cue.draw()
+            for ball in balls: ball.draw()
 
-                popup_item["timer"] += 1
-                if popup_item["timer"] > 120:
-                    achievement_popup_queue.pop(0)
+            if is_aiming:
+                mouse_pos = pygame.mouse.get_pos()
+                if aiming_level != 'hard': pygame.draw.line(screen, BROWN, (cue.x, cue.y), mouse_pos, 3)
+                if aiming_level == 'easy': pygame.draw.line(screen, WHITE, (cue.x, cue.y),
+                                                            (2 * cue.x - mouse_pos[0], 2 * cue.y - mouse_pos[1]), 1)
 
-            # Game is over, show scores
+            if show_message:
+                draw_text("FOUL (-10s)", foul_font, RED, 700, 400)
+
+        else:
+            # GAME OVER SCREEN
             if did_win:
-                draw_text("YOU WON! CONGRATS", foul_font, GREEN, 700, 400)
+                draw_text("YOU WON!", foul_font, GREEN, 700, 400)
             elif countdown_finished:
-                draw_text("YOU LOST ON TIME", foul_font, RED, 700, 400)
+                draw_text("TIME UP!", foul_font, RED, 700, 400)
             else:
-                draw_text("YOU POTTED THE PINK BALL EARLY!", foul_font, RED, 700, 350)
-                draw_text("GAME OVER.", foul_font, RED, 700, 400)
-            
-            score_text = f"YOUR SCORE IS: {score:.2f}"
-            draw_text(score_text, foul_font, WHITE, 700, 500)
-            
-            # Display top scores from DB
-            draw_text("Top Scorers:", title_font, WHITE, 50, 150)
-            top_scores = auth.get_top_scores()
-            if not top_scores:
-                draw_text("Be the first to set a score!", main_font, WHITE, 50, 200)
-            else:
-                for i, record in enumerate(top_scores):
-                    text = f"{i+1}. {record['Username']} - {record['Score']:.2f}({record['LevelName']})" # Format score
-                    draw_text(text, main_font, WHITE, 50, 200 + i * 35)
+                draw_text("EARLY PINK!", foul_font, RED, 700, 400)
 
-            # Wait for user to quit
-            # --- FINAL MENU BUTTONS (ADD THIS CODE) ---
-            # Create buttons
-            replay_button = pygame.Rect(650, 580, 200, 60)
-            exit_button = pygame.Rect(900, 580, 200, 60)
+            draw_text(f"SCORE: {score:.0f}", foul_font, WHITE, 700, 500)
 
-            # Draw buttons
-            pygame.draw.rect(screen, GREEN, replay_button)
-            draw_text("REPLAY", main_font, BLACK, replay_button.x + 55, replay_button.y + 15)
+            # Replay/Exit Buttons
+            replay_btn = pygame.Rect(650, 580, 200, 60)
+            exit_btn = pygame.Rect(900, 580, 200, 60)
+            pygame.draw.rect(screen, GREEN, replay_btn);
+            draw_text("REPLAY", main_font, BLACK, replay_btn.x + 50, replay_btn.y + 15)
+            pygame.draw.rect(screen, RED, exit_btn);
+            draw_text("EXIT", main_font, WHITE, exit_btn.x + 70, exit_btn.y + 15)
 
-            pygame.draw.rect(screen, RED, exit_button)
-            draw_text("EXIT", main_font, WHITE, exit_button.x + 75, exit_button.y + 15)
+            if pygame.mouse.get_pressed()[0]:
+                mx, my = pygame.mouse.get_pos()
+                if replay_btn.collidepoint(mx, my): return "replay"
+                if exit_btn.collidepoint(mx, my): pygame.quit(); sys.exit()
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
+        # =================================================================================
+        # --- POPUP DRAWING SYSTEM (Always draws on top) ---
+        # =================================================================================
+        if achievement_popup_queue:
+            popup = achievement_popup_queue[0]
 
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    mx, my = pygame.mouse.get_pos()
+            # Setup box
+            box_w, box_h = 400, 80
+            center_x = SCREEN_WIDTH // 2
+            box_rect = pygame.Rect(center_x - box_w // 2, 50, box_w, box_h)
 
-                    if replay_button.collidepoint((mx, my)):
-                        return "replay"  # Restart game
+            # Draw Box
+            pygame.draw.rect(screen, (20, 20, 20), box_rect, border_radius=10)
+            pygame.draw.rect(screen, GOLD, box_rect, 3, border_radius=10)
 
-                    if exit_button.collidepoint((mx, my)):
-                        pygame.quit()
-                        sys.exit()
+            # Draw Text
+            draw_text("Achievement Unlocked!", achievement_font, GOLD, box_rect.x + 90, box_rect.y + 10)
 
-                    # Change password
-                  #######
-        # --- NEW: Achievement Popup Drawing Logic ---
-        # (This draws on top of everything, including the game over screen)
-         # Remove from queue
-        # --- End of new block ---
+            # Center the name
+            txt_surf = main_font.render(popup['text'], True, WHITE)
+            txt_x = box_rect.x + (box_w - txt_surf.get_width()) // 2
+            screen.blit(txt_surf, (txt_x, box_rect.y + 40))
 
-        # --- Update the Display ---
+            # Timer
+            popup['timer'] += 1
+            if popup['timer'] > 180:  # Show for 3 seconds (60fps * 3)
+                achievement_popup_queue.pop(0)
+        # =================================================================================
+
         pygame.display.flip()
-        
+
     pygame.quit()
     sys.exit()
-
 # --- Main Driver ---
 pid_uname = login_register_screen()
 if pid_uname is None:
