@@ -55,10 +55,9 @@ GOLD = (255, 215, 0) # For achievement popup
 
 # --- Sound Setup (Unchanged) ---
 try:
-    bg_music = pygame.mixer.music.load("C:/Users/Administrator/source/repos/PONG1/bgm.mp3")
-    # pygame.mixer.music.play(-1)  # Loop forever <-- REMOVED, we will control this in the game loop
-    collision_sound = pygame.mixer.Sound("C:/Users/Administrator/source/repos/PONG1/collision.wav")
-    potting_sound = pygame.mixer.Sound("C:/Users/Administrator/source/repos/PONG1/ball_pocket.wav")
+    bg_music =   pygame.mixer.music.load("assets/sound/bgm.mp3")
+    collision_sound = pygame.mixer.Sound("assets/sound/collision.wav")
+    potting_sound =   pygame.mixer.Sound("assets/sound/ball_pocket.wav")
 except FileNotFoundError:
     print("Sound files not found. Game will run without sound.")
     collision_sound = None
