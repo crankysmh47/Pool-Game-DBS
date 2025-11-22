@@ -9,7 +9,7 @@ DB_HOST = "localhost"
 DB_NAME = "pool_game_db"
 DB_USER = "root"
 # --- !!! UPDATE THIS PASSWORD !!! ---
-DB_PASS = "@17Augu$t2ko5!"
+DB_PASS = "Password"
 
 
 def get_db_connection():

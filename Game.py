@@ -573,6 +573,13 @@ def main_game(player_id, username, difficulty_id):
                 message_timer = 0;
                 fouls += 1
 
+        # --- UPDATED FOUL MESSAGE TIMER ---
+        if show_message:
+            message_timer += 1
+            # 30 frames at 60 FPS = 0.5 seconds
+            if message_timer > 30:
+                show_message = False
+
         if collision_sound_played_this_frame: play_sound(collision_sound)
         if potting_sound_played_this_frame: play_sound(potting_sound)
 
@@ -615,11 +622,16 @@ def main_game(player_id, username, difficulty_id):
         # Save Game
         if game_over and not game_over_saved:
             auth.save_game_session(player_id, difficulty_id, score, did_win)
-            new_achievements = auth.check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win)
-            earned_achievements_cache = auth.get_player_achievements(player_id)
-            for ach in new_achievements:
-                if ach["AchievementID"] not in earned_achievements_cache:
-                    achievement_popup_queue.append({"text": ach["Name"], "timer": 0})
+
+            # --- UPDATED ACHIEVEMENT CHECK LOGIC ---
+            # We directly process the "newly_earned" list returned from the database
+            newly_earned = auth.check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win)
+
+            for ach in newly_earned:
+                # TRUST THE DB: If it's in this list, it was just inserted, so show it.
+                # Removed the extra "if not in cache" check here
+                achievement_popup_queue.append({"text": ach["Name"], "timer": 0})
+
             game_over_saved = True
 
         # Draw
@@ -654,7 +666,7 @@ def main_game(player_id, username, difficulty_id):
                 draw_text("EARLY PINK!", foul_font, RED, 500, 350)
             draw_text(f"SCORE: {score:.0f}", foul_font, WHITE, 500, 450)
 
-            # --- NEW BUTTONS (Menu, Logout, Exit) ---
+            # --- Buttons (Menu, Logout, Exit) ---
             menu_btn = pygame.Rect(300, 550, 200, 60)
             logout_btn = pygame.Rect(550, 550, 200, 60)
             exit_btn = pygame.Rect(800, 550, 200, 60)
@@ -691,8 +703,6 @@ def main_game(player_id, username, difficulty_id):
 
     pygame.quit()
     sys.exit()
-
-
 # --- Main Driver ---
 while True:
     pid_uname = login_register_screen()
