@@ -573,12 +573,9 @@ def main_game(player_id, username, difficulty_id):
                 message_timer = 0;
                 fouls += 1
 
-        # --- UPDATED FOUL MESSAGE TIMER ---
         if show_message:
             message_timer += 1
-            # 30 frames at 60 FPS = 0.5 seconds
-            if message_timer > 30:
-                show_message = False
+            if message_timer > 30: show_message = False
 
         if collision_sound_played_this_frame: play_sound(collision_sound)
         if potting_sound_played_this_frame: play_sound(potting_sound)
@@ -592,21 +589,33 @@ def main_game(player_id, username, difficulty_id):
             score = 0;
             remaining_time = 0
 
-        # Achievement Logic (Mid-Game)
+        # =================================================================================
+        # --- FLEXIBLE REAL-TIME ACHIEVEMENTS ---
+        # =================================================================================
         all_stopped = not cue.is_moving and all(not b.is_moving for b in balls)
         if all_stopped and shots > 0 and balls_potted_this_shot > 0:
-            if total_balls_potted_game == 0:
-                if FIRST_POT_ID not in earned_achievements_cache:
-                    auth.grant_achievement(player_id, FIRST_POT_ID)
-                    earned_achievements_cache.add(FIRST_POT_ID)
-                    achievement_popup_queue.append({"text": "First Potter!", "timer": 0})
+
+            # FLEXIBLE "First Potter" (ID 8)
+            # Logic: If I potted ANY ball (1 or more) and I don't have the achievement yet -> Grant it.
+            # (Removed the rigid 'total_balls == 0' check)
+            if FIRST_POT_ID not in earned_achievements_cache:
+                print(f"Flexible unlock: First Potter (Potted {balls_potted_this_shot} balls)")
+                auth.grant_achievement(player_id, FIRST_POT_ID)
+                earned_achievements_cache.add(FIRST_POT_ID)
+                achievement_popup_queue.append({"text": "First Potter!", "timer": 0})
+
+            # FLEXIBLE "Combo Shot" (ID 7)
+            # Logic: If I potted 2 OR MORE balls.
             if balls_potted_this_shot >= 2:
                 if COMBO_ACHIEVEMENT_ID not in earned_achievements_cache:
+                    print(f"Flexible unlock: Combo Shot (Potted {balls_potted_this_shot} balls)")
                     auth.grant_achievement(player_id, COMBO_ACHIEVEMENT_ID)
                     earned_achievements_cache.add(COMBO_ACHIEVEMENT_ID)
                     achievement_popup_queue.append({"text": "Combo Shot!", "timer": 0})
+
             total_balls_potted_game += balls_potted_this_shot
             balls_potted_this_shot = 0
+        # =================================================================================
 
         # Game Over Logic
         pink_ball = balls[8]
@@ -622,16 +631,9 @@ def main_game(player_id, username, difficulty_id):
         # Save Game
         if game_over and not game_over_saved:
             auth.save_game_session(player_id, difficulty_id, score, did_win)
-
-            # --- UPDATED ACHIEVEMENT CHECK LOGIC ---
-            # We directly process the "newly_earned" list returned from the database
-            newly_earned = auth.check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win)
-
-            for ach in newly_earned:
-                # TRUST THE DB: If it's in this list, it was just inserted, so show it.
-                # Removed the extra "if not in cache" check here
+            new_achievements = auth.check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win)
+            for ach in new_achievements:
                 achievement_popup_queue.append({"text": ach["Name"], "timer": 0})
-
             game_over_saved = True
 
         # Draw
@@ -657,7 +659,6 @@ def main_game(player_id, username, difficulty_id):
             if show_message: draw_text("FOUL (-10s)", foul_font, RED, 700, 400)
 
         else:
-            # --- GAME OVER SCREEN ---
             if did_win:
                 draw_text("YOU WON!", foul_font, GREEN, 500, 350)
             elif countdown_finished:
@@ -666,7 +667,6 @@ def main_game(player_id, username, difficulty_id):
                 draw_text("EARLY PINK!", foul_font, RED, 500, 350)
             draw_text(f"SCORE: {score:.0f}", foul_font, WHITE, 500, 450)
 
-            # --- Buttons (Menu, Logout, Exit) ---
             menu_btn = pygame.Rect(300, 550, 200, 60)
             logout_btn = pygame.Rect(550, 550, 200, 60)
             exit_btn = pygame.Rect(800, 550, 200, 60)
@@ -684,7 +684,6 @@ def main_game(player_id, username, difficulty_id):
                 if logout_btn.collidepoint(mx, my): return "logout"
                 if exit_btn.collidepoint(mx, my): pygame.quit(); sys.exit()
 
-        # Popups
         if achievement_popup_queue:
             popup = achievement_popup_queue[0]
             box_w, box_h = 400, 80
@@ -703,7 +702,7 @@ def main_game(player_id, username, difficulty_id):
 
     pygame.quit()
     sys.exit()
-# --- Main Driver ---
+    # --- Main Driver ---
 while True:
     pid_uname = login_register_screen()
     if pid_uname is None: break
