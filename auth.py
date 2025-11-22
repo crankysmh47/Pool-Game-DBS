@@ -233,29 +233,79 @@ def login_player(username, password):
         conn.close()
 
 
+# --- UPDATE THIS FUNCTION ---
 def save_game_session(player_id, difficulty_id, score, did_win):
+    """
+    Saves the session and RETURNS the new GameSessionID.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        return None
+
+    cursor = conn.cursor()
+    game_session_id = None  # Store the ID here
+
+    try:
+        # 1. Create Session
+        sql_session = "INSERT INTO GameSession (DifficultyID) VALUES (%s)"
+        cursor.execute(sql_session, (difficulty_id,))
+        game_session_id = cursor.lastrowid  # <--- CAPTURE THE ID
+
+        # 2. Create Participant Entry
+        sql_participant = """
+            INSERT INTO GameParticipant (GameSessionID, PlayerID, Score, IsWinner) 
+            VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(sql_participant, (game_session_id, player_id, int(score), did_win))
+
+        conn.commit()
+        return game_session_id  # <--- RETURN IT
+
+    except mysql.connector.Error as e:
+        print(f"Database error saving game: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# --- ADD THIS NEW FUNCTION ---
+def save_event_log(game_session_id, event_list):
+    """
+    Bulk inserts the buffered game events into the GameEvent table.
+    event_list should be a list of tuples: (PlayerID, PocketID, BallPotted, EventType)
+    """
+    if not event_list or game_session_id is None:
+        return
+
     conn = get_db_connection()
     if conn is None:
         return
 
     cursor = conn.cursor()
     try:
-        sql_session = "INSERT INTO GameSession (DifficultyID) VALUES (%s)"
-        cursor.execute(sql_session, (difficulty_id,))
-        game_session_id = cursor.lastrowid
-
-        sql_participant = """
-            INSERT INTO GameParticipant (GameSessionID, PlayerID, Score, IsWinner) 
-            VALUES (%s, %s, %s, %s)
+        sql = """
+            INSERT INTO GameEvent (GameSessionID, PlayerID, PocketID, BallPotted, EventType)
+            VALUES (%s, %s, %s, %s, %s)
         """
-        cursor.execute(sql_participant, (game_session_id, player_id, int(score), did_win))
+
+        # Prepare data: Add GameSessionID to every event tuple
+        data_to_insert = []
+        for event in event_list:
+            # event is (PlayerID, PocketID, BallPotted, EventType)
+            # We add game_session_id to the front
+            full_row = (game_session_id,) + event
+            data_to_insert.append(full_row)
+
+        cursor.executemany(sql, data_to_insert)
         conn.commit()
+        print(f"Successfully logged {len(data_to_insert)} events.")
+
     except mysql.connector.Error as e:
-        print(f"Database error saving game: {e}")
+        print(f"Database error saving events: {e}")
     finally:
         cursor.close()
         conn.close()
-
 
 def get_top_scores():
     conn = get_db_connection()

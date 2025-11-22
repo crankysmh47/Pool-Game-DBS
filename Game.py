@@ -32,7 +32,19 @@ ball_images = {
     9: pygame.image.load("assets/ball9.png"),
     0: pygame.image.load("assets/cue.png")
 }
-
+# Map Ball IDs to Names for the Database
+BALL_NAMES = {
+    0: "Cue Ball",   # Stays as "Cue Ball"
+    1: "Ball#1",     # Yellow
+    2: "Ball#2",     # Blue
+    3: "Ball#3",     # Red
+    4: "Ball#4",     # Purple
+    5: "Ball#5",     # Orange
+    6: "Ball#6",     # Green
+    7: "Ball#7",     # Brown
+    8: "Ball#8",     # Black
+    9: "Ball#9"      # Pink
+}
 # --- Colors ---
 SKYBLUE = (135, 206, 235)
 BLACK = (0, 0, 0)
@@ -409,6 +421,10 @@ def main_game(player_id, username, difficulty_id):
     message_timer = 0
     timer = 0.0
 
+    # ### NEW: LOGGING SETUP ###
+    game_events = []  # Buffer to store events (PlayerID, PocketID, BallName, Type)
+    # ##########################
+
     # Achievement Setup
     earned_achievements_cache = auth.get_player_achievements(player_id)
     achievement_popup_queue = []
@@ -459,12 +475,12 @@ def main_game(player_id, username, difficulty_id):
     for i, ball in enumerate(balls, start=1): ball.ball_id = i
 
     holes = [
-        Hole(TABLE_START_X + 3, 3),
-        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, 3),
-        Hole(SCREEN_WIDTH - 3, 3),
-        Hole(TABLE_START_X + 3, SCREEN_HEIGHT - 3),
-        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, SCREEN_HEIGHT - 3),
-        Hole(SCREEN_WIDTH - 3, SCREEN_HEIGHT - 3)
+        Hole(TABLE_START_X + 3, 3),  # ID 1
+        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, 3),  # ID 2
+        Hole(SCREEN_WIDTH - 3, 3),  # ID 3
+        Hole(TABLE_START_X + 3, SCREEN_HEIGHT - 3),  # ID 4
+        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, SCREEN_HEIGHT - 3),  # ID 5
+        Hole(SCREEN_WIDTH - 3, SCREEN_HEIGHT - 3)  # ID 6
     ]
     for hole in holes: hole.radius += hole_radius_change
 
@@ -505,6 +521,11 @@ def main_game(player_id, username, difficulty_id):
                         cue.is_moving = True
                         shots += 1
                         collision_sound_played_this_frame = True
+
+                        # ### NEW: LOG SHOT EVENT ###
+                        # (PlayerID, PocketID=None, BallName=None, Type="SHOT")
+                        game_events.append((player_id, None, None, "SHOT"))
+                        # ###########################
 
         # Physics
         cue.x += cue.speedx * delta_time;
@@ -550,7 +571,8 @@ def main_game(player_id, username, difficulty_id):
                     handle_collision(cue, balls[i])
                     if cue.is_moving or balls[i].is_moving: collision_sound_played_this_frame = True
 
-                for hole in holes:
+                # Ball Potting Check
+                for idx, hole in enumerate(holes):  # Use enumerate to get Index (0-5)
                     if check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (hole.x, hole.y),
                                                hole.radius):
                         if not balls[i].did_go: potting_sound_played_this_frame = True
@@ -559,6 +581,13 @@ def main_game(player_id, username, difficulty_id):
                         balls[i].x, balls[i].y = -5000, -5000
                         balls[i].speedx, balls[i].speedy = 0, 0
                         balls[i].is_moving = False
+
+                        # ### NEW: LOG POTTED EVENT ###
+                        # idx + 1 gives us PocketID (1-6)
+                        pocket_id = idx + 1
+                        ball_name = BALL_NAMES.get(balls[i].ball_id, "Unknown")
+                        game_events.append((player_id, pocket_id, ball_name, "POTTED"))
+                        # #############################
 
         # Foul
         for hole in holes:
@@ -572,6 +601,10 @@ def main_game(player_id, username, difficulty_id):
                 show_message = True;
                 message_timer = 0;
                 fouls += 1
+
+                # ### NEW: LOG FOUL EVENT ###
+                game_events.append((player_id, None, "Cue Ball", "FOUL"))
+                # ###########################
 
         if show_message:
             message_timer += 1
@@ -589,33 +622,25 @@ def main_game(player_id, username, difficulty_id):
             score = 0;
             remaining_time = 0
 
-        # =================================================================================
-        # --- FLEXIBLE REAL-TIME ACHIEVEMENTS ---
-        # =================================================================================
+        # Achievement Logic (Mid-Game)
         all_stopped = not cue.is_moving and all(not b.is_moving for b in balls)
         if all_stopped and shots > 0 and balls_potted_this_shot > 0:
-
-            # FLEXIBLE "First Potter" (ID 8)
-            # Logic: If I potted ANY ball (1 or more) and I don't have the achievement yet -> Grant it.
-            # (Removed the rigid 'total_balls == 0' check)
             if FIRST_POT_ID not in earned_achievements_cache:
-                print(f"Flexible unlock: First Potter (Potted {balls_potted_this_shot} balls)")
                 auth.grant_achievement(player_id, FIRST_POT_ID)
                 earned_achievements_cache.add(FIRST_POT_ID)
                 achievement_popup_queue.append({"text": "First Potter!", "timer": 0})
-
-            # FLEXIBLE "Combo Shot" (ID 7)
-            # Logic: If I potted 2 OR MORE balls.
             if balls_potted_this_shot >= 2:
+                # This saves a specific "COMBO" line to your database
+                combo_label = f"{balls_potted_this_shot} Ball Combo"
+                game_events.append((player_id, None, combo_label, "COMBO"))
+
                 if COMBO_ACHIEVEMENT_ID not in earned_achievements_cache:
                     print(f"Flexible unlock: Combo Shot (Potted {balls_potted_this_shot} balls)")
                     auth.grant_achievement(player_id, COMBO_ACHIEVEMENT_ID)
                     earned_achievements_cache.add(COMBO_ACHIEVEMENT_ID)
                     achievement_popup_queue.append({"text": "Combo Shot!", "timer": 0})
-
             total_balls_potted_game += balls_potted_this_shot
             balls_potted_this_shot = 0
-        # =================================================================================
 
         # Game Over Logic
         pink_ball = balls[8]
@@ -630,7 +655,15 @@ def main_game(player_id, username, difficulty_id):
 
         # Save Game
         if game_over and not game_over_saved:
-            auth.save_game_session(player_id, difficulty_id, score, did_win)
+            # ### NEW: SAVE SESSION & EVENTS ###
+            # 1. Save Session and get the ID back
+            session_id = auth.save_game_session(player_id, difficulty_id, score, did_win)
+
+            # 2. Save the Event Log if we got a valid session ID
+            if session_id:
+                auth.save_event_log(session_id, game_events)
+            # ##################################
+
             new_achievements = auth.check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win)
             for ach in new_achievements:
                 achievement_popup_queue.append({"text": ach["Name"], "timer": 0})
@@ -702,7 +735,6 @@ def main_game(player_id, username, difficulty_id):
 
     pygame.quit()
     sys.exit()
-    # --- Main Driver ---
 while True:
     pid_uname = login_register_screen()
     if pid_uname is None: break
