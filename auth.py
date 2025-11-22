@@ -335,6 +335,61 @@ def get_top_scores():
     return top_scores  # <--- FIXED: Moved outside finally
 
 
+def get_full_game_history(player_id):
+    """
+    Fetches the last 10 games for a player, including ALL detailed events
+    (Shots, Pots, Fouls) for those games.
+    Returns a list of dictionaries, where each dictionary is a full game summary.
+    """
+    conn = get_db_connection()
+    if conn is None:
+        return []
+
+    cursor = conn.cursor(dictionary=True)
+    history_data = []
+
+    try:
+        # 1. Get the last 10 Game Sessions for this player
+        sql_sessions = """
+            SELECT gs.GameSessionID, gs.StartTime, gp.Score, gp.IsWinner, dl.LevelName
+            FROM GameSession gs
+            JOIN GameParticipant gp ON gs.GameSessionID = gp.GameSessionID
+            JOIN DifficultyLevel dl ON gs.DifficultyID = dl.DifficultyID
+            WHERE gp.PlayerID = %s
+            ORDER BY gs.StartTime DESC
+            LIMIT 10
+        """
+        cursor.execute(sql_sessions, (player_id,))
+        sessions = cursor.fetchall()
+
+        # 2. For EACH session, get the detailed Event Log
+        for session in sessions:
+            sid = session['GameSessionID']
+
+            sql_events = """
+                SELECT EventType, BallPotted, PocketID, EventTime
+                FROM GameEvent
+                WHERE GameSessionID = %s
+                ORDER BY EventTime ASC
+            """
+            cursor.execute(sql_events, (sid,))
+            events = cursor.fetchall()
+
+            # Combine session info with its specific events
+            session_summary = {
+                "info": session,  # Contains Date, Score, Win/Loss
+                "events": events  # Contains the list of shots/pots
+            }
+            history_data.append(session_summary)
+
+    except Error as e:
+        print(f"Error fetching history: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+    return history_data
+
 if __name__ == "__main__":
     # Simple test to check connection
     print(login_player("test_user", "test_pass"))

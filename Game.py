@@ -163,25 +163,42 @@ class Hole:
 
 
 def post_login_menu(player_id, username):
-    menu_font = pygame.font.SysFont("arial", 38)
+    menu_font = pygame.font.SysFont("arial", 30)  # Slightly smaller font to fit buttons
     running = True
 
-    play_button = pygame.Rect(450, 250, 300, 70)
-    achieve_button = pygame.Rect(450, 350, 300, 70)
-    change_pass_button = pygame.Rect(450, 450, 300, 70)
+    # Layout: 5 Buttons centered
+    btn_width = 300
+    btn_height = 60
+    center_x = 450
+    start_y = 200
+    gap = 70
+
+    play_btn = pygame.Rect(center_x, start_y, btn_width, btn_height)
+    achieve_btn = pygame.Rect(center_x, start_y + gap, btn_width, btn_height)
+    history_btn = pygame.Rect(center_x, start_y + gap * 2, btn_width, btn_height)  # NEW
+    pass_btn = pygame.Rect(center_x, start_y + gap * 3, btn_width, btn_height)
+    logout_btn = pygame.Rect(center_x, start_y + gap * 4, btn_width, btn_height)  # NEW
 
     while running:
         screen.fill((30, 30, 30))
         draw_text("Welcome, " + username, title_font, WHITE, 450, 120)
-        draw_text("Select an option", menu_font, GOLD, 480, 180)
+        draw_text("Main Menu", title_font, GOLD, 500, 160)
 
-        pygame.draw.rect(screen, BLUE, play_button)
-        pygame.draw.rect(screen, GREEN, achieve_button)
-        draw_text("PLAY", menu_font, WHITE, play_button.x + 85, play_button.y + 18)
-        draw_text("ACHIEVEMENTS", menu_font, WHITE, achieve_button.x + 15, achieve_button.y + 18)
+        # Draw Buttons
+        pygame.draw.rect(screen, BLUE, play_btn)
+        draw_text("PLAY GAME", menu_font, WHITE, play_btn.x + 70, play_btn.y + 15)
 
-        pygame.draw.rect(screen, RED, change_pass_button)
-        draw_text("CHANGE PASSWORD", menu_font, WHITE, change_pass_button.x + 5, change_pass_button.y + 18)
+        pygame.draw.rect(screen, GREEN, achieve_btn)
+        draw_text("ACHIEVEMENTS", menu_font, WHITE, achieve_btn.x + 45, achieve_btn.y + 15)
+
+        pygame.draw.rect(screen, ORANGE, history_btn)  # NEW COLOR
+        draw_text("GAME HISTORY", menu_font, BLACK, history_btn.x + 50, history_btn.y + 15)
+
+        pygame.draw.rect(screen, (150, 50, 50), pass_btn)
+        draw_text("CHANGE PASSWORD", menu_font, WHITE, pass_btn.x + 15, pass_btn.y + 15)
+
+        pygame.draw.rect(screen, RED, logout_btn)
+        draw_text("LOGOUT", menu_font, WHITE, logout_btn.x + 90, logout_btn.y + 15)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -190,15 +207,116 @@ def post_login_menu(player_id, username):
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
-                if play_button.collidepoint((mx, my)):
-                    return "play"
-                if achieve_button.collidepoint((mx, my)):
-                    return "achievements"
-                if change_pass_button.collidepoint((mx, my)):
-                    change_password_screen(player_id, username)
+
+                if play_btn.collidepoint((mx, my)): return "play"
+                if achieve_btn.collidepoint((mx, my)): return "achievements"
+                if history_btn.collidepoint((mx, my)): return "history"  # NEW
+                if pass_btn.collidepoint((mx, my)): change_password_screen(player_id, username)
+                if logout_btn.collidepoint((mx, my)): return "logout"  # NEW
 
         pygame.display.update()
 
+
+def history_screen(player_id, username):
+    running = True
+
+    # 1. Fetch Data
+    games = auth.get_full_game_history(player_id)
+
+    # Scroll Variables
+    scroll_y = 0
+    scroll_speed = 30
+
+    # UI Config
+    start_x = 100
+    content_start_y = 120
+    line_height = 30
+
+    return_btn = pygame.Rect(20, 20, 150, 50)
+
+    while running:
+        screen.fill((20, 20, 20))
+
+        # Header (Fixed)
+        pygame.draw.rect(screen, (20, 20, 20), (0, 0, SCREEN_WIDTH, 100))  # Background for header
+        draw_text(f"Last 10 Games History", title_font, GOLD, 400, 30)
+
+        pygame.draw.rect(screen, RED, return_btn, border_radius=8)
+        draw_text("RETURN", main_font, WHITE, return_btn.x + 25, return_btn.y + 10)
+
+        # Content Area (Scrollable)
+        # We draw everything relative to 'current_y + scroll_y'
+        current_y = content_start_y + scroll_y
+
+        if not games:
+            draw_text("No games played yet!", main_font, WHITE, 450, 300)
+
+        for game in games:
+            info = game['info']
+            events = game['events']
+
+            # -- Game Header Box --
+            # Color code win/loss
+            header_color = (0, 100, 0) if info['IsWinner'] else (100, 0, 0)
+
+            # Only draw if visible on screen (Optimization)
+            if -200 < current_y < SCREEN_HEIGHT:
+                pygame.draw.rect(screen, header_color, (start_x, current_y, 1000, 40), border_radius=5)
+
+                header_text = f"Date: {info['StartTime']} | Difficulty: {info['LevelName']} | Score: {info['Score']} | Result: {'WIN' if info['IsWinner'] else 'LOSS'}"
+                draw_text(header_text, pygame.font.SysFont("Arial", 20, bold=True), WHITE, start_x + 10, current_y + 8)
+
+            current_y += 50  # Move down after header
+
+            # -- Event Details --
+            for event in events:
+                if -50 < current_y < SCREEN_HEIGHT:
+                    evt_type = event['EventType']
+                    details = ""
+
+                    # Color coding text
+                    txt_color = WHITE
+
+                    if evt_type == "SHOT":
+                        details = "Player took a shot."
+                        txt_color = (200, 200, 200)  # Grey
+                    elif evt_type == "POTTED":
+                        details = f"Potted {event['BallPotted']} in Pocket #{event['PocketID']}."
+                        txt_color = GOLD
+                    elif evt_type == "FOUL":
+                        details = "FOUL! Cue Ball pocketed. Penalty applied."
+                        txt_color = RED
+                    elif evt_type == "COMBO":
+                        details = f"COMBO BONUS: {event['BallPotted']}"
+                        txt_color = SKYBLUE
+
+                    # Draw the text line
+                    draw_text(f"  > {details}", pygame.font.SysFont("Consolas", 18), txt_color, start_x + 20, current_y)
+
+                current_y += 25  # Next line
+
+            current_y += 40  # Gap between games
+
+        # Scroll Logic limits
+        total_content_height = (current_y - scroll_y) - content_start_y
+        min_scroll = min(0, -total_content_height + (SCREEN_HEIGHT - 150))
+
+        if scroll_y > 0: scroll_y = 0
+        if scroll_y < min_scroll: scroll_y = min_scroll
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit();
+                sys.exit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if return_btn.collidepoint(event.pos):
+                    return
+
+            if event.type == pygame.MOUSEWHEEL:
+                scroll_y += event.y * scroll_speed
+
+        pygame.display.update()
 
 def achievements_screen(player_id, username):
     running = True
@@ -735,9 +853,13 @@ def main_game(player_id, username, difficulty_id):
 
     pygame.quit()
     sys.exit()
+
+
+# --- Main Driver ---
 while True:
     pid_uname = login_register_screen()
-    if pid_uname is None: break
+    if pid_uname is None:
+        break
 
     player_id, username = pid_uname
 
@@ -747,9 +869,17 @@ while True:
         if choice == "play":
             difficulty_id = difficulty_screen()
             result = main_game(player_id, username, difficulty_id)
-            if result == "logout": break
+            if result == "logout":
+                break
+
         elif choice == "achievements":
             achievements_screen(player_id, username)
+
+        elif choice == "history":
+            history_screen(player_id, username)
+
+        elif choice == "logout":
+            break  # Breaks the inner loop, goes back to login screen
 
 pygame.quit()
 sys.exit()
