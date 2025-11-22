@@ -530,6 +530,38 @@ def change_password_screen(player_id, username):
         pygame.display.flip()
 
 
+def get_safe_cue_spawn_pos(target_x, target_y, cue_radius, other_balls):
+    """
+    Checks if the target position overlaps with any existing ball.
+    If it does, it shifts the position to the right until safe.
+    """
+    safe_x, safe_y = target_x, target_y
+    is_unsafe = True
+    attempts = 0
+
+    # Try finding a spot within a reasonable area (limit attempts to prevent infinite loop)
+    while is_unsafe and attempts < 50:
+        is_unsafe = False
+        for ball in other_balls:
+            if not ball.did_go:
+                # Calculate distance between spawn point and this ball
+                dx = safe_x - ball.x
+                dy = safe_y - ball.y
+                dist = math.sqrt(dx * dx + dy * dy)
+
+                # If overlap detected (distance < sum of radii + small buffer)
+                if dist < (cue_radius + ball.radius + 2):
+                    is_unsafe = True
+                    break
+
+        if is_unsafe:
+            # Shift spawn point to the right by one ball diameter + gap
+            safe_x += (cue_radius * 2) + 5
+            attempts += 1
+
+    return safe_x, safe_y
+
+
 def main_game(player_id, username, difficulty_id):
     # --- Game State ---
     game_over = False
@@ -539,9 +571,11 @@ def main_game(player_id, username, difficulty_id):
     message_timer = 0
     timer = 0.0
 
-    # ### NEW: LOGGING SETUP ###
-    game_events = []  # Buffer to store events (PlayerID, PocketID, BallName, Type)
-    # ##########################
+    # NEW: State to manage foul respawn delay
+    foul_waiting_for_stop = False
+
+    # Logging Setup
+    game_events = []
 
     # Achievement Setup
     earned_achievements_cache = auth.get_player_achievements(player_id)
@@ -593,12 +627,12 @@ def main_game(player_id, username, difficulty_id):
     for i, ball in enumerate(balls, start=1): ball.ball_id = i
 
     holes = [
-        Hole(TABLE_START_X + 3, 3),  # ID 1
-        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, 3),  # ID 2
-        Hole(SCREEN_WIDTH - 3, 3),  # ID 3
-        Hole(TABLE_START_X + 3, SCREEN_HEIGHT - 3),  # ID 4
-        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, SCREEN_HEIGHT - 3),  # ID 5
-        Hole(SCREEN_WIDTH - 3, SCREEN_HEIGHT - 3)  # ID 6
+        Hole(TABLE_START_X + 3, 3),
+        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, 3),
+        Hole(SCREEN_WIDTH - 3, 3),
+        Hole(TABLE_START_X + 3, SCREEN_HEIGHT - 3),
+        Hole(TABLE_START_X + (SCREEN_WIDTH - TABLE_START_X) / 2, SCREEN_HEIGHT - 3),
+        Hole(SCREEN_WIDTH - 3, SCREEN_HEIGHT - 3)
     ]
     for hole in holes: hole.radius += hole_radius_change
 
@@ -609,6 +643,26 @@ def main_game(player_id, username, difficulty_id):
 
     while running:
         delta_time = clock.tick(60) / 1000.0
+
+        # --- NEW: Check if we can respawn the cue ball ---
+        if foul_waiting_for_stop:
+            # Only respawn if all other balls have stopped moving
+            if all(not b.is_moving for b in balls):
+                # Calculate standard start position
+                standard_x = (SCREEN_WIDTH - TABLE_START_X) / 4 + TABLE_START_X
+                standard_y = SCREEN_HEIGHT / 2
+
+                # Use helper to find a position that doesn't overlap
+                respawn_x, respawn_y = get_safe_cue_spawn_pos(standard_x, standard_y, cue.radius, balls)
+
+                # Apply respawn
+                cue.x = respawn_x
+                cue.y = respawn_y
+                cue.speedx = 0
+                cue.speedy = 0
+                cue.is_moving = False
+                foul_waiting_for_stop = False  # Resume normal play
+        # -------------------------------------------------
 
         if shots == 0 and not music_playing:
             try:
@@ -624,7 +678,9 @@ def main_game(player_id, username, difficulty_id):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT: running = False
-            if not cue.is_moving and not game_over:
+
+            # Prevent shooting if we are waiting for a foul reset
+            if not cue.is_moving and not game_over and not foul_waiting_for_stop:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     is_aiming = True;
                     balls_potted_this_shot = 0
@@ -639,27 +695,27 @@ def main_game(player_id, username, difficulty_id):
                         cue.is_moving = True
                         shots += 1
                         collision_sound_played_this_frame = True
-
-                        # ### NEW: LOG SHOT EVENT ###
-                        # (PlayerID, PocketID=None, BallName=None, Type="SHOT")
                         game_events.append((player_id, None, None, "SHOT"))
-                        # ###########################
 
-        # Physics
-        cue.x += cue.speedx * delta_time;
-        cue.y += cue.speedy * delta_time
-        cue.speedx *= 0.99;
-        cue.speedy *= 0.99
-        if abs(cue.speedx) < 5 and abs(cue.speedy) < 5:
-            cue.speedx, cue.speedy = 0, 0; cue.is_moving = False
-        else:
-            cue.is_moving = True
+        # --- Physics ---
+        # Only update Cue Ball physics if it's NOT waiting for foul reset
+        if not foul_waiting_for_stop:
+            cue.x += cue.speedx * delta_time;
+            cue.y += cue.speedy * delta_time
+            cue.speedx *= 0.99;
+            cue.speedy *= 0.99
+            if abs(cue.speedx) < 5 and abs(cue.speedy) < 5:
+                cue.speedx, cue.speedy = 0, 0; cue.is_moving = False
+            else:
+                cue.is_moving = True
 
-        if cue.x - cue.radius < TABLE_START_X: cue.speedx *= -1; cue.x = TABLE_START_X + cue.radius
-        if cue.x + cue.radius > SCREEN_WIDTH: cue.speedx *= -1; cue.x = SCREEN_WIDTH - cue.radius
-        if cue.y - cue.radius < 0: cue.speedy *= -1; cue.y = cue.radius
-        if cue.y + cue.radius > SCREEN_HEIGHT: cue.speedy *= -1; cue.y = SCREEN_HEIGHT - cue.radius
+            # Cue Wall Collisions
+            if cue.x - cue.radius < TABLE_START_X: cue.speedx *= -1; cue.x = TABLE_START_X + cue.radius
+            if cue.x + cue.radius > SCREEN_WIDTH: cue.speedx *= -1; cue.x = SCREEN_WIDTH - cue.radius
+            if cue.y - cue.radius < 0: cue.speedy *= -1; cue.y = cue.radius
+            if cue.y + cue.radius > SCREEN_HEIGHT: cue.speedy *= -1; cue.y = SCREEN_HEIGHT - cue.radius
 
+        # Other Balls Physics (Always Update)
         for ball in balls:
             ball.x += ball.speedx * delta_time;
             ball.y += ball.speedy * delta_time
@@ -685,12 +741,14 @@ def main_game(player_id, username, difficulty_id):
                         handle_collision(balls[i], balls[j])
                         if balls[i].is_moving or balls[j].is_moving: collision_sound_played_this_frame = True
 
-                if check_collision_circles((cue.x, cue.y), cue.radius, (balls[i].x, balls[i].y), balls[i].radius):
-                    handle_collision(cue, balls[i])
-                    if cue.is_moving or balls[i].is_moving: collision_sound_played_this_frame = True
+                # Check Cue-Ball Collision ONLY if cue is on table
+                if not foul_waiting_for_stop:
+                    if check_collision_circles((cue.x, cue.y), cue.radius, (balls[i].x, balls[i].y), balls[i].radius):
+                        handle_collision(cue, balls[i])
+                        if cue.is_moving or balls[i].is_moving: collision_sound_played_this_frame = True
 
                 # Ball Potting Check
-                for idx, hole in enumerate(holes):  # Use enumerate to get Index (0-5)
+                for idx, hole in enumerate(holes):
                     if check_collision_circles((balls[i].x, balls[i].y), balls[i].radius, (hole.x, hole.y),
                                                hole.radius):
                         if not balls[i].did_go: potting_sound_played_this_frame = True
@@ -700,29 +758,32 @@ def main_game(player_id, username, difficulty_id):
                         balls[i].speedx, balls[i].speedy = 0, 0
                         balls[i].is_moving = False
 
-                        # ### NEW: LOG POTTED EVENT ###
-                        # idx + 1 gives us PocketID (1-6)
                         pocket_id = idx + 1
                         ball_name = BALL_NAMES.get(balls[i].ball_id, "Unknown")
                         game_events.append((player_id, pocket_id, ball_name, "POTTED"))
-                        # #############################
 
-        # Foul
+        # --- Foul Logic (Updated) ---
         for hole in holes:
-            if check_collision_circles((cue.x, cue.y), cue.radius, (hole.x, hole.y), hole.radius):
-                if cue.is_moving: potting_sound_played_this_frame = True
-                cue.x = (SCREEN_WIDTH - TABLE_START_X) / 4 + TABLE_START_X;
-                cue.y = SCREEN_HEIGHT / 2
-                cue.speedx, cue.speedy = 0, 0;
-                cue.is_moving = False
-                timer += 10;
-                show_message = True;
-                message_timer = 0;
-                fouls += 1
+            # Check collision only if cue is actually on the table
+            if not foul_waiting_for_stop:
+                if check_collision_circles((cue.x, cue.y), cue.radius, (hole.x, hole.y), hole.radius):
+                    if cue.is_moving: potting_sound_played_this_frame = True
 
-                # ### NEW: LOG FOUL EVENT ###
-                game_events.append((player_id, None, "Cue Ball", "FOUL"))
-                # ###########################
+                    # 1. Move Cue Ball "Off Table" immediately
+                    cue.x = -1000
+                    cue.y = -1000
+                    cue.speedx, cue.speedy = 0, 0
+                    cue.is_moving = False
+
+                    # 2. Set Waiting Flag
+                    foul_waiting_for_stop = True
+
+                    # 3. Apply Penalties
+                    timer += 10;
+                    show_message = True;
+                    message_timer = 0;
+                    fouls += 1
+                    game_events.append((player_id, None, "Cue Ball", "FOUL"))
 
         if show_message:
             message_timer += 1
@@ -740,7 +801,7 @@ def main_game(player_id, username, difficulty_id):
             score = 0;
             remaining_time = 0
 
-        # Achievement Logic (Mid-Game)
+        # Achievement Logic
         all_stopped = not cue.is_moving and all(not b.is_moving for b in balls)
         if all_stopped and shots > 0 and balls_potted_this_shot > 0:
             if FIRST_POT_ID not in earned_achievements_cache:
@@ -748,12 +809,9 @@ def main_game(player_id, username, difficulty_id):
                 earned_achievements_cache.add(FIRST_POT_ID)
                 achievement_popup_queue.append({"text": "First Potter!", "timer": 0})
             if balls_potted_this_shot >= 2:
-                # This saves a specific "COMBO" line to your database
                 combo_label = f"{balls_potted_this_shot} Ball Combo"
                 game_events.append((player_id, None, combo_label, "COMBO"))
-
                 if COMBO_ACHIEVEMENT_ID not in earned_achievements_cache:
-                    print(f"Flexible unlock: Combo Shot (Potted {balls_potted_this_shot} balls)")
                     auth.grant_achievement(player_id, COMBO_ACHIEVEMENT_ID)
                     earned_achievements_cache.add(COMBO_ACHIEVEMENT_ID)
                     achievement_popup_queue.append({"text": "Combo Shot!", "timer": 0})
@@ -773,14 +831,9 @@ def main_game(player_id, username, difficulty_id):
 
         # Save Game
         if game_over and not game_over_saved:
-            # ### NEW: SAVE SESSION & EVENTS ###
-            # 1. Save Session and get the ID back
             session_id = auth.save_game_session(player_id, difficulty_id, score, did_win)
-
-            # 2. Save the Event Log if we got a valid session ID
             if session_id:
                 auth.save_event_log(session_id, game_events)
-            # ##################################
 
             new_achievements = auth.check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_win)
             for ach in new_achievements:
@@ -800,9 +853,16 @@ def main_game(player_id, username, difficulty_id):
             draw_text(f"Player: {username}", title_font, RED, 50, 50)
             draw_text(f"Time: {remaining_time:.1f}", title_font, RED if remaining_time < 30 else BLUE, 50, 100)
             for hole in holes: hole.draw()
-            cue.draw()
+
+            # --- Draw Cue Ball only if NOT waiting for foul ---
+            if not foul_waiting_for_stop:
+                cue.draw()
+            # --------------------------------------------------
+
             for ball in balls: ball.draw()
-            if is_aiming:
+
+            # Only draw aim line if cue ball is visible and ready
+            if is_aiming and not foul_waiting_for_stop:
                 mouse_pos = pygame.mouse.get_pos()
                 if aiming_level != 'hard': pygame.draw.line(screen, BROWN, (cue.x, cue.y), mouse_pos, 3)
                 if aiming_level == 'easy': pygame.draw.line(screen, WHITE, (cue.x, cue.y),
@@ -852,10 +912,7 @@ def main_game(player_id, username, difficulty_id):
         pygame.display.flip()
 
     pygame.quit()
-    sys.exit()
-
-
-# --- Main Driver ---
+    sys.exit()# --- Main Driver ---
 while True:
     pid_uname = login_register_screen()
     if pid_uname is None:
