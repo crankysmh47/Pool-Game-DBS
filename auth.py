@@ -9,7 +9,7 @@ DB_HOST = "localhost"
 DB_NAME = "pool_game_db"
 DB_USER = "root"
 # --- !!! UPDATE THIS PASSWORD !!! ---
-DB_PASS = "Password"
+DB_PASS = "roo123"
 
 
 def get_db_connection():
@@ -88,11 +88,22 @@ def check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_wi
     newly_earned = []
 
     try:
+        # Call stored procedure
         cursor.execute(
             "CALL sp_CheckPlayerAchievements(%s,%s,%s,%s,%s,%s)",
             (player_id, difficulty_id, timer, shots, fouls, did_win)
         )
+
+        # Fetch first result set
         newly_earned = cursor.fetchall()
+
+        # IMPORTANT: Consume all remaining result sets
+        while cursor.nextset():
+            try:
+                cursor.fetchall()
+            except:
+                pass
+
         conn.commit()
 
     except Error as e:
@@ -103,7 +114,8 @@ def check_all_achievements(player_id, difficulty_id, timer, shots, fouls, did_wi
         cursor.close()
         conn.close()
 
-    return newly_earned  # <--- FIXED: Moved outside finally
+    return newly_earned
+  # <--- FIXED: Moved outside finally
 
 
 def get_achievement_name(achievement_id):
