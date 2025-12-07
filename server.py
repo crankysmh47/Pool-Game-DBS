@@ -71,6 +71,17 @@ def handle_client(conn, addr):
                     )
                     response = {"status": "success", "data": new_achs}
 
+                
+                elif cmd == "GET_ALL_USERS":
+                    # In a real app, verify p['requester_role'] == 'ADMIN' here
+                    data = auth.get_all_users_for_admin()
+                    response = {"status": "success", "data": data}
+
+                elif cmd == "PROMOTE_USER":
+                    success = auth.promote_user(p['target_id'])
+                    msg = "User Promoted!" if success else "Database Error"
+                    response = {"status": "success" if success else "error", "message": msg}
+
                 # Send Response (using custom serializer for dates)
                 conn.sendall(json.dumps(response, default=json_serial).encode('utf-8'))
 

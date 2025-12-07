@@ -208,7 +208,7 @@ class Hole:
         self.radius = 30
 
 # --- Screens ---
-def post_login_menu(player_id, username):
+def post_login_menu(player_id, username, role):
     menu_font = pygame.font.SysFont("arial", 30)
     running = True
     btn_width = 300; btn_height = 60
@@ -249,6 +249,7 @@ def post_login_menu(player_id, username):
         scaled_surf = pygame.transform.smoothscale(canvas, screen.get_size())
         screen.blit(scaled_surf, (0, 0))
         pygame.display.update()
+    return role
 
 def history_screen(player_id, username):
     running = True
@@ -415,7 +416,8 @@ def login_register_screen():
                     # NETWORK CALL
                     res = net.send("LOGIN", {"username": username, "password": password})
                     message = res.get('message', "Error")
-                    if res.get('success'): return res['player_id'], username
+                    if res.get('success'): 
+                        return res['player_id'], username, res.get('role', 'PLAYER')
                 elif button_register.collidepoint((mx, my)):
                     # NETWORK CALL
                     res = net.send("REGISTER", {"username": username, "password": password})
@@ -483,6 +485,125 @@ def change_password_screen(player_id, username):
         scaled_surf = pygame.transform.smoothscale(canvas, screen.get_size())
         screen.blit(scaled_surf, (0, 0))
         pygame.display.update()
+
+
+def admin_screen(admin_id, admin_username):
+    running = True
+    
+    # 1. Fetch Data
+    res = net.send("GET_ALL_USERS", {})
+    users = res.get('data', [])
+    current_idx = 0
+    
+    # UI Layout
+    panel_rect = pygame.Rect(V_WIDTH//2 - 300, 100, 600, 450)
+    prev_btn = pygame.Rect(panel_rect.x + 20, panel_rect.y + 100, 50, 50)
+    next_btn = pygame.Rect(panel_rect.right - 70, panel_rect.y + 100, 50, 50)
+    promote_btn = pygame.Rect(panel_rect.x + 150, panel_rect.y + 350, 300, 60)
+    return_btn = pygame.Rect(20, 20, 150, 50)
+    
+    status_msg = "Ready"
+    msg_color = WHITE
+
+    while running:
+        canvas.fill((10, 10, 10))
+        draw_text(f"Admin Panel: {admin_username}", title_font, GOLD, 20, 80)
+        
+        # Return Button
+        pygame.draw.rect(canvas, RED, return_btn, border_radius=8)
+        draw_text("RETURN", main_font, WHITE, return_btn.x + 25, return_btn.y + 10)
+
+        # Draw Main Panel
+        pygame.draw.rect(canvas, (30, 30, 30), panel_rect, border_radius=15)
+        pygame.draw.rect(canvas, WHITE, panel_rect, 2, border_radius=15)
+
+        if users:
+            user = users[current_idx]
+            
+            # --- "DROPDOWN" / SELECTOR ---
+            # Prev Arrow
+            pygame.draw.rect(canvas, BLUE, prev_btn)
+            draw_text("<", title_font, WHITE, prev_btn.x + 15, prev_btn.y + 5)
+            # Next Arrow
+            pygame.draw.rect(canvas, BLUE, next_btn)
+            draw_text(">", title_font, WHITE, next_btn.x + 15, next_btn.y + 5)
+            
+            # Display Selected User Data
+            cx = panel_rect.centerx
+            draw_text(f"User: {user['Username']}", title_font, WHITE, cx - 100, panel_rect.y + 40)
+            draw_text(f"ID: {user['UserID']}", main_font, (150,150,150), cx - 100, panel_rect.y + 110)
+            
+            role_color = GREEN if user['Role'] == 'ADMIN' else YELLOW
+            draw_text(f"Role: {user['Role']}", main_font, role_color, cx - 100, panel_rect.y + 150)
+            
+            draw_text(f"Games Played: {user['GamesPlayed']}", main_font, WHITE, cx - 100, panel_rect.y + 200)
+            draw_text(f"Wins: {user['Wins']}", main_font, WHITE, cx - 100, panel_rect.y + 240)
+
+            # Promote Button (Only if not already admin)
+            if user['Role'] != 'ADMIN':
+                pygame.draw.rect(canvas, GREEN, promote_btn, border_radius=10)
+                draw_text("MAKE ADMIN", title_font, BLACK, promote_btn.x + 50, promote_btn.y + 10)
+            else:
+                draw_text("User is already Admin", main_font, GREEN, cx - 100, promote_btn.y + 20)
+
+        else:
+            draw_text("No users found.", title_font, RED, panel_rect.x + 200, panel_rect.y + 200)
+
+        # Status Message
+        draw_text(status_msg, main_font, msg_color, panel_rect.x + 20, panel_rect.bottom + 20)
+
+        # Event Loop
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = get_virtual_mouse_pos()
+                
+                if return_btn.collidepoint((mx, my)): return
+                
+                if users:
+                    if prev_btn.collidepoint((mx, my)):
+                        current_idx = (current_idx - 1) % len(users)
+                        status_msg = "Ready"; msg_color = WHITE
+                    
+                    if next_btn.collidepoint((mx, my)):
+                        current_idx = (current_idx + 1) % len(users)
+                        status_msg = "Ready"; msg_color = WHITE
+                        
+                    if users[current_idx]['Role'] != 'ADMIN' and promote_btn.collidepoint((mx, my)):
+                        # Network Call to Promote
+                        res = net.send("PROMOTE_USER", {"target_id": users[current_idx]['UserID']})
+                        if res.get('status') == 'success':
+                            users[current_idx]['Role'] = 'ADMIN' # Update local cache immediately
+                            status_msg = f"Promoted {users[current_idx]['Username']}!"; msg_color = GREEN
+                        else:
+                            status_msg = "Error promoting user."; msg_color = RED
+
+        scaled_surf = pygame.transform.smoothscale(canvas, screen.get_size())
+        screen.blit(scaled_surf, (0, 0))
+        pygame.display.update()
+
+def admin_dashboard_screen(win, net):
+    run = True
+    clock = pygame.time.Clock()
+    font = pygame.font.SysFont("comicsans", 40)
+
+    while run:
+        win.fill((30, 30, 30)) # Dark grey background
+        text = font.render("ADMIN DASHBOARD (Press ESC to quit)", 1, (255, 255, 255))
+        win.blit(text, (100, 300))
+        pygame.display.update()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+                pygame.quit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    run = False
+        
+        clock.tick(60)
+
+
 
 def main_game(player_id, username, difficulty_id):
     game_over = False; game_over_saved = False; did_win = False
@@ -723,16 +844,38 @@ def main_game(player_id, username, difficulty_id):
     pygame.quit(); sys.exit()
 
 while True:
-    pid_uname = login_register_screen()
-    if pid_uname is None: break
-    player_id, username = pid_uname
-    while True:
-        choice = post_login_menu(player_id, username)
-        if choice == "play":
-            difficulty_id = difficulty_screen()
-            result = main_game(player_id, username, difficulty_id)
-            if result == "logout": break
-        elif choice == "achievements": achievements_screen(player_id, username)
-        elif choice == "history": history_screen(player_id, username)
-        elif choice == "logout": break
+    pid_data = login_register_screen() # Returns tuple or None
+    if pid_data is None: break
+    
+    # 1. Unpack Data
+    player_id, username, role = pid_data 
+    
+    # 2. Check Role IMMEDIATELY
+    if role == 'ADMIN':
+        # --- ADMIN FLOW ---
+        # Go straight to Admin Screen, bypassing the Player Menu
+        admin_screen(player_id, username)
+        
+    else:
+        # --- PLAYER FLOW ---
+        while True:
+            # Pass role to menu just in case, but this is the player loop
+            choice = post_login_menu(player_id, username, role) 
+            
+            if choice == "play":
+                difficulty_id = difficulty_screen()
+                # Check if they backed out of difficulty screen
+                if difficulty_id is not None: 
+                    result = main_game(player_id, username, difficulty_id)
+                    if result == "logout": break
+            
+            elif choice == "achievements": 
+                achievements_screen(player_id, username)
+            
+            elif choice == "history": 
+                history_screen(player_id, username)
+                
+            elif choice == "logout": 
+                break
+
 pygame.quit(); sys.exit()
