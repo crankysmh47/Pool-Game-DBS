@@ -8,7 +8,7 @@ from hmac import compare_digest
 DB_HOST = "localhost"
 DB_NAME = "pool_game_db"
 DB_USER = "root"
-DB_PASS = "roo123" # !!! UPDATE THIS !!!
+DB_PASS = "@17Augu$t2ko5!" # !!! UPDATE THIS !!!
 
 def get_db_connection():
     try:
@@ -50,17 +50,17 @@ def register_player(username, password):
         conn.start_transaction()
 
         # 1. Insert into USER table
-        sql_user = "INSERT INTO User (Username, PasswordHash, Salt, Role) VALUES (%s, %s, %s, 'ADMIN')"
+        sql_user = "INSERT INTO User (Username, PasswordHash, Salt, Role) VALUES (%s, %s, %s, 'PLAYER')"
         cursor.execute(sql_user, (username, hash_hex, salt_hex))
         
         # Get the new ID
         new_user_id = cursor.lastrowid
 
         # 2. Insert into PLAYER table
-        # sql_player = "INSERT INTO Player (PlayerID) VALUES (%s)"
-        # cursor.execute(sql_player, (new_user_id,))
-        sql_admin = 'INSERT INTO admin (AdminID) Values (%s)'
-        cursor.execute(sql_admin, (new_user_id,))
+        sql_player = "INSERT INTO Player (PlayerID) VALUES (%s)"
+        cursor.execute(sql_player, (new_user_id,))
+        # sql_admin = 'INSERT INTO admin (AdminID) Values (%s)'
+        # cursor.execute(sql_admin, (new_user_id,))
 
         # Commit logic
         conn.commit()
@@ -106,6 +106,14 @@ def login_player(username, password):
         stored_hash_hex = user_data['PasswordHash']
         stored_salt_hex = user_data['Salt']
         user_id = user_data['UserID'] # This is also the PlayerID
+        
+        # SELF-HEALING: Ensure Player record exists
+        sql_check = "SELECT PlayerID FROM Player WHERE PlayerID = %s"
+        cursor.execute(sql_check, (user_id,))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO Player (PlayerID) VALUES (%s)", (user_id,))
+            conn.commit()
+            print(f"Self-healed Player record for UserID {user_id}")
 
         salt = bytes.fromhex(stored_salt_hex)
         new_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
