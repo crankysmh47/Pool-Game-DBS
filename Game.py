@@ -55,7 +55,7 @@ pygame.mixer.init()
 V_WIDTH = 1200
 V_HEIGHT = 650
 screen = pygame.display.set_mode((V_WIDTH, V_HEIGHT), pygame.RESIZABLE)
-pygame.display.set_caption("Pool Game (Client-Server Architecture)")
+pygame.display.set_caption("Pool Game")
 canvas = pygame.Surface((V_WIDTH, V_HEIGHT))
 
 # Scale tracking
@@ -229,11 +229,11 @@ def draw_interactive_avatar(surface, x, y, size, state="idle", mouse_pos=(0,0)):
     if state == "shy":
         hand_radius = size // 2.5
         # Hands covering eyes partially
-        pygame.draw.circle(surface, BG_DARK_SEC, (x - eye_offset_x, y + 10), hand_radius)
-        pygame.draw.circle(surface, NEON_CYAN, (x - eye_offset_x, y + 10), hand_radius, 2)
+        pygame.draw.circle(surface, BG_DARK_SEC, (x - eye_offset_x, y + 1), hand_radius-1)
+        pygame.draw.circle(surface, NEON_CYAN, (x - eye_offset_x, y + 5), hand_radius-2.5, 2)
         
-        pygame.draw.circle(surface, BG_DARK_SEC, (x + eye_offset_x, y + 10), hand_radius)
-        pygame.draw.circle(surface, NEON_CYAN, (x + eye_offset_x, y + 10), hand_radius, 2)
+        pygame.draw.circle(surface, BG_DARK_SEC, (x + eye_offset_x, y + 1), hand_radius-1)
+        pygame.draw.circle(surface, NEON_CYAN, (x + eye_offset_x, y + 5), hand_radius-2.5, 2)
 
 def draw_glass_panel(rect, border_color=GLASS_BORDER):
     """Draws a semi-transparent 'glass' panel with a border."""
@@ -1012,7 +1012,7 @@ def main_game(player_id, username, difficulty_id):
             if math.sqrt((ball.x - hole.x)**2 + (ball.y - hole.y)**2) < 50: return True
         return False
 
-    is_aiming = False; running = True; music_playing = False; countdown_finished = False
+    is_aiming = False; running = True; countdown_finished = False
 
     while running:
         delta_time = clock.tick(60) / 1000.0
@@ -1023,10 +1023,12 @@ def main_game(player_id, username, difficulty_id):
                 cue.x = respawn_x; cue.y = respawn_y; cue.speedx = 0; cue.speedy = 0
                 cue.is_moving = False; foul_waiting_for_stop = False
 
-        if shots == 0 and not music_playing:
-            if bg_music: pygame.mixer.music.play(-1); music_playing = True
-        elif shots > 0 and music_playing:
-            pygame.mixer.music.stop(); music_playing = False
+        if shots == 0:
+            if not pygame.mixer.music.get_busy():
+                pygame.mixer.music.play(-1)
+            
+        else:
+            pygame.mixer.music.stop()
 
         col_snd = False; pot_snd = False
 
@@ -1111,7 +1113,7 @@ def main_game(player_id, username, difficulty_id):
                         game_events.append((player_id, idx+1, BALL_NAMES.get(balls[i].ball_id), "POTTED"))
                         # Potting Effects
                         for _ in range(20): particles.append(Particle(hole.x, hole.y, GOLD, 40))
-                        floating_texts.append(FloatingText(hole.x, hole.y - 20, "+100", GOLD))
+                        floating_texts.append(FloatingText(hole.x, hole.y - 20, str(100 * difficulty_factor), GOLD))
                         shaker.shake(10, 5)
 
         # Foul

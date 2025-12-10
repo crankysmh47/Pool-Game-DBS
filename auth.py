@@ -1,14 +1,16 @@
-import mysql.connector
-from mysql.connector import Error
+
+import mysql
+from mysql.connector import *
 import hashlib
 import os
+
 from hmac import compare_digest
 
 # --- 1. Connection Details ---
 DB_HOST = "localhost"
 DB_NAME = "pool_game_db"
 DB_USER = "root"
-DB_PASS = "@17Augu$t2ko5!" # !!! UPDATE THIS !!!
+DB_PASS = "roo123" # !!! UPDATE THIS !!!
 
 def get_db_connection():
     try:
