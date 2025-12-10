@@ -3,15 +3,20 @@ import threading
 import json
 import auth
 import datetime
+import struct
 
 # Configuration
 HOST = '127.0.0.1'
 PORT = 65432
 
-# Helper to serialize DateTimes for JSON
+from decimal import Decimal 
+
+# Helper to serialize Dates AND Decimals for JSON
 def json_serial(obj):
     if isinstance(obj, (datetime.datetime, datetime.date)):
         return obj.isoformat()
+    if isinstance(obj, Decimal): 
+        return int(obj)          # Convert Decimal to Int
     raise TypeError(f"Type {type(obj)} not serializable")
 
 def handle_client(conn, addr):
@@ -82,8 +87,33 @@ def handle_client(conn, addr):
                     msg = "User Promoted!" if success else "Database Error"
                     response = {"status": "success" if success else "error", "message": msg}
 
+
+                elif cmd == "GET_PLAYER_HIGH_SCORES":
+                    data = auth.get_player_high_scores(p['player_id'])
+                    response = {"status": "success", "data": data}
+
+                elif cmd == "REVOKE_ADMIN":
+                    success = auth.revoke_admin(p['target_id'])
+                    t_id = p.get('target_id')
+                    print(f"[SERVER DEBUG] Received REVOKE request for ID: {t_id} (Type: {type(t_id)})")
+                    msg = "Admin Revoked" if success else "DB Error"
+                    response = {"status": "success" if success else "error", "message": msg}
+
+
+                elif cmd == "BAN_USER":
+                    success = auth.ban_user(p['target_id'])
+                    msg = "User Banned/Deleted" if success else "DB Error"
+                    response = {"status": "success" if success else "error", "message": msg}
+
+                
                 # Send Response (using custom serializer for dates)
-                conn.sendall(json.dumps(response, default=json_serial).encode('utf-8'))
+                json_data = json.dumps(response, default=json_serial).encode('utf-8')
+                    
+                    # 2. Pack the length of the data into 4 bytes (Big Endian integer)
+                msg_length = struct.pack('>I', len(json_data))
+                    
+                    # 3. Send Length + Data
+                conn.sendall(msg_length + json_data)
 
             except json.JSONDecodeError:
                 print(f"[{addr}] JSON Error")

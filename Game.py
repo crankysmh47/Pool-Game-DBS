@@ -3,49 +3,75 @@ import math
 import sys
 import socket
 import json
-import auth
 import random
+import struct
 
 # --- NETWORK HELPER CLASS (DIRECT LOCAL CALLS) ---
-class DirectClient:
-    def send(self, command, payload={}):
+# --- NETWORK CLIENT (CONNECTS TO SERVER.PY) ---
+class NetworkClient:
+    def __init__(self):
+        self.server_ip = "127.0.0.1"
+        self.port = 65432
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connected = False
         try:
-            if command == "LOGIN":
-                return auth.login_player(payload['username'], payload['password'])
-            elif command == "REGISTER":
-                return auth.register_player(payload['username'], payload['password'])
-            elif command == "GET_HISTORY":
-                return {'data': auth.get_full_game_history(payload['player_id'])}
-            elif command == "GET_ACHIEVEMENTS":
-                return {'data': list(auth.get_player_achievements(payload['player_id']))}
-            elif command == "GET_ALL_ACHIEVEMENTS":
-                return {'data': auth.get_all_achievements_list()}
-            elif command == "GRANT_ACHIEVEMENT":
-                auth.grant_achievement(payload['player_id'], payload['achievement_id'])
-                return {'status': 'success'}
-            elif command == "SAVE_SESSION":
-                sid = auth.save_game_session(payload['pid'], payload['diff'], payload['score'], payload['win'])
-                return {'session_id': sid}
-            elif command == "SAVE_EVENTS":
-                auth.save_event_log(payload['session_id'], payload['events'])
-                return {'status': 'success'}
-            elif command == "CHECK_ACHIEVEMENTS":
-                new_ach = auth.check_all_achievements(payload['pid'], payload['diff'], payload['timer'], payload['shots'], payload['fouls'], payload['win'])
-                return {'data': new_ach}
-            elif command == "CHANGE_PASSWORD":
-                return auth.update_password(payload['player_id'], payload['new_password'])
-            elif command == "GET_ALL_USERS":
-                return {'data': auth.get_all_users_for_admin()}
-            elif command == "PROMOTE_USER":
-                success = auth.promote_user(payload['target_id'])
-                return {'status': 'success' if success else 'error'}
-            return {'status': 'error', 'message': 'Unknown Command'}
+            self.client.connect((self.server_ip, self.port))
+            self.connected = True
+            print("[NETWORK] Connected to server.")
         except Exception as e:
-            print(f"DirectClient Error: {e}")
+            print(f"[NETWORK] Could not connect to server: {e}")
+
+    def recv_all(self, n):
+        """Helper function to receive exactly n bytes."""
+        data = bytearray()
+        while len(data) < n:
+            packet = self.client.recv(n - len(data))
+            if not packet:
+                return None
+            data.extend(packet)
+        return data
+
+    def send(self, command, payload={}):
+        if not self.connected:
+            return {'status': 'error', 'message': 'Not connected to server'}
+
+        try:
+            # 1. SENDING
+            req = {"command": command, "payload": payload}
+            data = json.dumps(req).encode('utf-8')
+            # Send message length + message
+            # (If you want the server to also read variable length input from client, 
+            #  server.py's receiving logic needs a similar update. 
+            #  BUT for now, your client sends small requests, so standard send is usually fine.
+            #  For safety, simply sending the data is okay for small commands.)
+            self.client.sendall(data) 
+            
+            # 2. RECEIVING (The Fix)
+            # A. Read the first 4 bytes to get the message length
+            raw_msglen = self.recv_all(4)
+            if not raw_msglen:
+                return {'status': 'error', 'message': 'Connection closed'}
+            
+            msglen = struct.unpack('>I', raw_msglen)[0]
+            
+            # B. Read exactly that many bytes
+            response_data = self.recv_all(msglen)
+            
+            if not response_data:
+                return {'status': 'error', 'message': 'Empty response body'}
+                
+            return json.loads(response_data.decode('utf-8'))
+            
+        except Exception as e:
+            print(f"[NETWORK] Error: {e}")
             return {'status': 'error', 'message': str(e)}
 
-# Initialize Network Global
-net = DirectClient()
+# Initialize
+net = NetworkClient()
+
+# --- INITIALIZE NETWORK ---
+# net = DirectClient()  <-- DELETE OR COMMENT THIS LINE
+net = NetworkClient() # <-- ADD THIS LINE
 
 # --- Pygame Setup ---
 pygame.init()
@@ -460,15 +486,18 @@ def post_login_menu(player_id, username, role):
     # Layout
     btn_width = 300
     btn_height = 60
-    center_x = V_WIDTH // 2
-    start_y = 220
-    gap = 80
-
-    play_btn = pygame.Rect(center_x - btn_width//2, start_y, btn_width, btn_height)
-    achieve_btn = pygame.Rect(center_x - btn_width//2, start_y + gap, btn_width, btn_height)
-    history_btn = pygame.Rect(center_x - btn_width//2, start_y + gap * 2, btn_width, btn_height)
-    pass_btn = pygame.Rect(center_x - btn_width//2, start_y + gap * 3, btn_width, btn_height)
-    logout_btn = pygame.Rect(center_x - btn_width//2, start_y + gap * 4, btn_width, btn_height)
+    center_x = 450; start_y = 180; gap = 65 # Adjusted spacing slightly
+        
+    play_btn = pygame.Rect(center_x, start_y, 300, 60)
+    achieve_btn = pygame.Rect(center_x, start_y + gap, 300, 60)
+    
+    # NEW BUTTON
+    high_score_btn = pygame.Rect(center_x, start_y + gap * 2, 300, 60)
+    
+    history_btn = pygame.Rect(center_x, start_y + gap * 3, 300, 60)
+    pass_btn = pygame.Rect(center_x, start_y + gap * 4, 300, 60)
+    logout_btn = pygame.Rect(center_x, start_y + gap * 5, 300, 60)
+    admin_btn = pygame.Rect(center_x, start_y + gap * 6, 300, 60)
 
     while running:
         canvas.fill(BG_DARK)
@@ -486,6 +515,10 @@ def post_login_menu(player_id, username, role):
         draw_neon_button(play_btn, "PLAY GAME", NEON_CYAN, play_btn.collidepoint((mx, my)))
         draw_neon_button(achieve_btn, "ACHIEVEMENTS", NEON_PURPLE, achieve_btn.collidepoint((mx, my)))
         draw_neon_button(history_btn, "MISSION HISTORY", NEON_CYAN, history_btn.collidepoint((mx, my)))
+        
+        pygame.draw.rect(canvas, DARKPURPLE, high_score_btn)
+        draw_text("MY HIGH SCORES", main_font, WHITE, high_score_btn.x + 45, high_score_btn.y + 15)
+
         draw_neon_button(pass_btn, "CHANGE CREDENTIALS", NEON_PURPLE, pass_btn.collidepoint((mx, my)))
         draw_neon_button(logout_btn, "LOGOUT", NEON_MAGENTA, logout_btn.collidepoint((mx, my)))
 
@@ -498,6 +531,7 @@ def post_login_menu(player_id, username, role):
                 if history_btn.collidepoint((mx, my)): return "history"
                 if pass_btn.collidepoint((mx, my)): change_password_screen(player_id, username)
                 if logout_btn.collidepoint((mx, my)): return "logout"
+                if high_score_btn.collidepoint((mx, my)): personal_high_scores_screen(player_id)
 
         # --- SCALING BLIT ---
             
@@ -506,10 +540,14 @@ def post_login_menu(player_id, username, role):
         pygame.display.update()
     return role
 
-def history_screen(player_id, username):
+def history_screen(target_id, target_name):
+    """
+    Shows history for ANY player ID passed to it.
+    Used by: Player (to see own history) AND Admin (to see others' history).
+    """
     running = True
     # NETWORK CALL
-    res = net.send("GET_HISTORY", {"player_id": player_id})
+    res = net.send("GET_HISTORY", {"player_id": target_id})
     games = res.get('data', [])
     
     scroll_y = 0; scroll_speed = 30
@@ -517,48 +555,38 @@ def history_screen(player_id, username):
     return_btn = pygame.Rect(20, 20, 150, 50)
 
     while running:
-        canvas.fill(BG_DARK)
-        # Starfield BG
-        starfield.update_and_draw(canvas)
+        canvas.fill((20, 20, 20))
+        pygame.draw.rect(canvas, (20, 20, 20), (0, 0, V_WIDTH, 100))
         
-        draw_text(f"MISSION HISTORY", title_font, NEON_CYAN, 400, 30)
+        # Header now uses the target_name
+        draw_text(f"History: {target_name}", title_font, GOLD, 400, 30)
         
-        mx, my = get_virtual_mouse_pos()
-        draw_neon_button(return_btn, "RETURN", NEON_MAGENTA, return_btn.collidepoint((mx, my)))
+        pygame.draw.rect(canvas, RED, return_btn, border_radius=8)
+        draw_text("RETURN", main_font, WHITE, return_btn.x + 25, return_btn.y + 10)
 
         current_y = content_start_y + scroll_y
-        if not games: draw_text("No missions on record.", main_font, ACCENT_WHITE, 450, 300)
+        if not games: draw_text("No games found.", main_font, WHITE, 450, 300)
 
         for game in games:
             info = game['info']; events = game['events']
+            header_color = (0, 100, 0) if info['IsWinner'] else (100, 0, 0)
             
-            # Glass Panel for each game
             if -200 < current_y < V_HEIGHT:
-                panel_rect = pygame.Rect(start_x, current_y, 1000, 40)
-                draw_glass_panel(panel_rect, NEON_CYAN if info['IsWinner'] else NEON_MAGENTA)
-                
+                pygame.draw.rect(canvas, header_color, (start_x, current_y, 1000, 40), border_radius=5)
                 header_text = f"Date: {info['StartTime']} | Level: {info['LevelName']} | Score: {info['Score']} | {'WIN' if info['IsWinner'] else 'LOSS'}"
-                draw_text(header_text, achievement_font, ACCENT_WHITE, start_x + 15, current_y + 8)
+                draw_text(header_text, pygame.font.SysFont("Arial", 20, bold=True), WHITE, start_x + 10, current_y + 8)
             current_y += 50
             
             for event in events:
                 if -50 < current_y < V_HEIGHT:
                     evt_type = event['EventType'] 
                     details = ""
-                    txt_color = ACCENT_WHITE
+                    txt_color = WHITE
                     
-                    if evt_type == "SHOT": 
-                        details = "Shot taken."
-                        txt_color = (150, 150, 150)
-                    elif evt_type == "POTTED": 
-                        details = f"Potted {event['BallPotted']} (Pocket {event['PocketID']})"
-                        txt_color = NEON_CYAN
-                    elif evt_type == "FOUL": 
-                        details = "FOUL! Penalty applied."
-                        txt_color = NEON_MAGENTA
-                    elif evt_type == "COMBO": 
-                        details = f"COMBO: {event['BallPotted']}"
-                        txt_color = NEON_PURPLE
+                    if evt_type == "SHOT": details = "Shot taken."; txt_color = (150, 150, 150)
+                    elif evt_type == "POTTED": details = f"Potted {event['BallPotted']} (Pocket {event['PocketID']})"; txt_color = GOLD
+                    elif evt_type == "FOUL": details = "FOUL! Penalty applied."; txt_color = RED
+                    elif evt_type == "COMBO": details = f"COMBO: {event['BallPotted']}"; txt_color = SKYBLUE
 
                     draw_text(f"  > {details}", pygame.font.SysFont("Consolas", 18), txt_color, start_x + 20, current_y)
                 current_y += 25
@@ -575,10 +603,61 @@ def history_screen(player_id, username):
                 mx, my = get_virtual_mouse_pos()
                 if return_btn.collidepoint((mx, my)): return
             if event.type == pygame.MOUSEWHEEL: scroll_y += event.y * scroll_speed
-            
+        
         scaled_surf = pygame.transform.smoothscale(canvas, screen.get_size())
         screen.blit(scaled_surf, (0, 0))
         pygame.display.update()
+
+
+def personal_high_scores_screen(player_id):
+    running = True
+    # NETWORK CALL
+    res = net.send("GET_PLAYER_HIGH_SCORES", {"player_id": player_id})
+    scores = res.get('data', [])
+    
+    return_btn = pygame.Rect(20, 20, 150, 50)
+
+    while running:
+        canvas.fill((20, 20, 40)) # Slightly different blue-ish background
+        draw_text("My Top 10 High Scores", title_font, GOLD, 380, 50)
+        
+        pygame.draw.rect(canvas, RED, return_btn, border_radius=8)
+        draw_text("RETURN", main_font, WHITE, return_btn.x + 25, return_btn.y + 10)
+
+        # Table Header
+        header_y = 120
+        draw_text("Rank", main_font, SKYBLUE, 150, header_y)
+        draw_text("Score", main_font, SKYBLUE, 300, header_y)
+        draw_text("Difficulty", main_font, SKYBLUE, 500, header_y)
+        draw_text("Date", main_font, SKYBLUE, 750, header_y)
+        pygame.draw.line(canvas, WHITE, (100, header_y + 35), (1100, header_y + 35), 2)
+
+        start_y = 180
+        if not scores:
+            draw_text("No games played yet. Go play!", main_font, WHITE, 450, 300)
+        
+        for i, row in enumerate(scores):
+            y = start_y + (i * 45)
+            rank = f"#{i+1}"
+            score = str(row['Score'])
+            diff = row['LevelName']
+            date = str(row['StartTime'])
+            
+            draw_text(rank, main_font, WHITE, 150, y)
+            draw_text(score, main_font, GOLD, 300, y)
+            draw_text(diff, main_font, WHITE, 500, y)
+            draw_text(date, main_font, (200,200,200), 750, y)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = get_virtual_mouse_pos()
+                if return_btn.collidepoint((mx, my)): return
+        
+        scaled_surf = pygame.transform.smoothscale(canvas, screen.get_size())
+        screen.blit(scaled_surf, (0, 0))
+        pygame.display.update()
+
 
 def achievements_screen(player_id, username):
     running = True
@@ -873,9 +952,19 @@ def admin_screen(admin_id, admin_username):
     
     # UI Layout
     panel_rect = pygame.Rect(V_WIDTH//2 - 300, 100, 600, 450)
+    
+    # Navigation Buttons
     prev_btn = pygame.Rect(panel_rect.x + 20, panel_rect.y + 100, 50, 50)
     next_btn = pygame.Rect(panel_rect.right - 70, panel_rect.y + 100, 50, 50)
-    promote_btn = pygame.Rect(panel_rect.x + 150, panel_rect.y + 350, 300, 60)
+    
+    # Action Buttons (Positions defined relative to panel)
+    # Button A: Used for Promote OR Revoke
+    action_btn_main = pygame.Rect(panel_rect.x + 50, panel_rect.y + 350, 240, 60)
+    # Button B: Used for Ban (Only shows for Players)
+    ban_btn = pygame.Rect(panel_rect.x + 310, panel_rect.y + 350, 240, 60)
+    history_btn = pygame.Rect(panel_rect.x + 50, panel_rect.y + 290, 240, 50)
+
+    
     return_btn = pygame.Rect(20, 20, 150, 50)
     
     status_msg = "Ready"
@@ -894,17 +983,19 @@ def admin_screen(admin_id, admin_username):
         pygame.draw.rect(canvas, WHITE, panel_rect, 2, border_radius=15)
 
         if users:
+            # Safety check for index
+            if current_idx >= len(users): current_idx = 0
             user = users[current_idx]
             
-            # --- "DROPDOWN" / SELECTOR ---
-            # Prev Arrow
+            
+            
+            # --- NAV ARROWS ---
             pygame.draw.rect(canvas, BLUE, prev_btn)
             draw_text("<", title_font, WHITE, prev_btn.x + 15, prev_btn.y + 5)
-            # Next Arrow
             pygame.draw.rect(canvas, BLUE, next_btn)
             draw_text(">", title_font, WHITE, next_btn.x + 15, next_btn.y + 5)
             
-            # Display Selected User Data
+            # --- DATA DISPLAY ---
             cx = panel_rect.centerx
             draw_text(f"User: {user['Username']}", title_font, WHITE, cx - 100, panel_rect.y + 40)
             draw_text(f"ID: {user['UserID']}", main_font, (150,150,150), cx - 100, panel_rect.y + 110)
@@ -915,22 +1006,38 @@ def admin_screen(admin_id, admin_username):
             draw_text(f"Games Played: {user['GamesPlayed']}", main_font, WHITE, cx - 100, panel_rect.y + 200)
             draw_text(f"Wins: {user['Wins']}", main_font, WHITE, cx - 100, panel_rect.y + 240)
 
-            # Promote Button (Only if not already admin)
-            if user['Role'] != 'ADMIN':
-                pygame.draw.rect(canvas, GREEN, promote_btn, border_radius=10)
-                draw_text("MAKE ADMIN", title_font, BLACK, promote_btn.x + 50, promote_btn.y + 10)
+            # --- DYNAMIC ACTION BUTTONS ---
+            
+            # Check if viewing self (Cannot ban/demote self)
+            if user['UserID'] == admin_id:
+                draw_text("Current User (You)", main_font, SKYBLUE, cx - 80, panel_rect.y + 360)
             else:
-                draw_text("User is already Admin", main_font, GREEN, cx - 100, promote_btn.y + 20)
+                if user['Role'] == 'ADMIN':
+                    # CASE 1: TARGET IS ADMIN -> Show Revoke Only
+                    pygame.draw.rect(canvas, ORANGE, action_btn_main, border_radius=10)
+                    draw_text("REVOKE ADMIN", main_font, BLACK, action_btn_main.x + 35, action_btn_main.y + 15)
+                else:
+                    # CASE 2: TARGET IS PLAYER -> Show Promote AND Ban
+                    # Promote
+                    pygame.draw.rect(canvas, GREEN, action_btn_main, border_radius=10)
+                    draw_text("MAKE ADMIN", main_font, BLACK, action_btn_main.x + 45, action_btn_main.y + 15)
+                    # Ban
+                    pygame.draw.rect(canvas, RED, ban_btn, border_radius=10)
+                    draw_text("BAN USER", main_font, WHITE, ban_btn.x + 60, ban_btn.y + 15)
+
+                    pygame.draw.rect(canvas, SKYBLUE, history_btn, border_radius=10)
+                    draw_text("VIEW HISTORY", main_font, BLACK, history_btn.x + 45, history_btn.y + 15)
 
         else:
             draw_text("No users found.", title_font, RED, panel_rect.x + 200, panel_rect.y + 200)
 
-        # Status Message
         draw_text(status_msg, main_font, msg_color, panel_rect.x + 20, panel_rect.bottom + 20)
 
-        # Event Loop
         for event in pygame.event.get():
             if event.type == pygame.QUIT: pygame.quit(); sys.exit()
+            
+        # Open history screen passing the SELECTED user's ID
+            
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = get_virtual_mouse_pos()
                 
@@ -944,16 +1051,44 @@ def admin_screen(admin_id, admin_username):
                     if next_btn.collidepoint((mx, my)):
                         current_idx = (current_idx + 1) % len(users)
                         status_msg = "Ready"; msg_color = WHITE
+
+                    if history_btn.collidepoint((mx, my)): history_screen(user['UserID'], user['Username'])
+                    
+                    user = users[current_idx]
+                    
+                    # Prevent actions on self
+                    if user['UserID'] != admin_id:
                         
-                    if users[current_idx]['Role'] != 'ADMIN' and promote_btn.collidepoint((mx, my)):
-                        # Network Call to Promote
-                        res = net.send("PROMOTE_USER", {"target_id": users[current_idx]['UserID']})
-                        if res.get('status') == 'success':
-                            users[current_idx]['Role'] = 'ADMIN' # Update local cache immediately
-                            status_msg = f"Promoted {users[current_idx]['Username']}!"; msg_color = GREEN
+                        # --- LOGIC FOR ADMIN TARGET ---
+                        if user['Role'] == 'ADMIN':
+                            if action_btn_main.collidepoint((mx, my)): # Revoke Button
+                                print(f"Clicking Revoke for UserID: {user['UserID']}")
+                                res = net.send("REVOKE_ADMIN", {"target_id": user['UserID']})
+                                if res.get('status') == 'success':
+                                    user['Role'] = 'PLAYER' # Update local
+                                    status_msg = "Admin Revoked"; msg_color = ORANGE
+                                else:
+                                    status_msg = "Error"; msg_color = RED
+
+                        # --- LOGIC FOR PLAYER TARGET ---
                         else:
-                            status_msg = "Error promoting user."; msg_color = RED
-            
+                            if action_btn_main.collidepoint((mx, my)): # Promote Button
+                                res = net.send("PROMOTE_USER", {"target_id": user['UserID']})
+                                if res.get('status') == 'success':
+                                    user['Role'] = 'ADMIN' # Update local
+                                    status_msg = "User Promoted"; msg_color = GREEN
+                                else:
+                                    status_msg = "Error"; msg_color = RED
+                            
+                            elif ban_btn.collidepoint((mx, my)): # Ban Button
+                                res = net.send("BAN_USER", {"target_id": user['UserID']})
+                                if res.get('status') == 'success':
+                                    users.pop(current_idx) # Remove from list
+                                    if current_idx >= len(users) and current_idx > 0: current_idx -= 1
+                                    status_msg = "User Banned"; msg_color = RED
+                                else:
+                                    status_msg = "Error banning"; msg_color = RED
+
         scaled_surf = pygame.transform.smoothscale(canvas, screen.get_size())
         screen.blit(scaled_surf, (0, 0))
         pygame.display.update()

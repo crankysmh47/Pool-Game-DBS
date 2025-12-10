@@ -1,4 +1,3 @@
-
 import mysql
 from mysql.connector import *
 import hashlib
@@ -87,7 +86,6 @@ def register_player(username, password):
 # --- IN auth.py ---
 
 def login_player(username, password):
-    # ... (connection logic) ...
     if not username or not password:
         return {'success': False, 'message': 'Username and password cannot be empty.'}
 
@@ -97,7 +95,7 @@ def login_player(username, password):
 
     cursor = conn.cursor(dictionary=True)
     try:
-        # 1. Fetch Role as well
+        # 1. Fetch User Data including Role
         sql = "SELECT UserID, PasswordHash, Salt, Role FROM User WHERE Username = %s"
         cursor.execute(sql, (username,))
         user_data = cursor.fetchone()
@@ -107,33 +105,42 @@ def login_player(username, password):
 
         stored_hash_hex = user_data['PasswordHash']
         stored_salt_hex = user_data['Salt']
-        user_id = user_data['UserID'] # This is also the PlayerID
-        
-        # SELF-HEALING: Ensure Player record exists
-        sql_check = "SELECT PlayerID FROM Player WHERE PlayerID = %s"
-        cursor.execute(sql_check, (user_id,))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO Player (PlayerID) VALUES (%s)", (user_id,))
-            conn.commit()
-            print(f"Self-healed Player record for UserID {user_id}")
+        user_id = user_data['UserID']
+        role = user_data['Role']
 
+        # 2. Verify Password
         salt = bytes.fromhex(stored_salt_hex)
         new_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
 
-        if compare_digest(new_hash, bytes.fromhex(stored_hash_hex)):
-            # 2. RETURN THE ROLE
-            return {
-                'success': True, 
-                'message': f"Welcome, {username}.", 
-                'player_id': user_id,
-                'role': user_data['Role'] # 'ADMIN' or 'PLAYER'
-            }
-    # ... (rest of function) ...
+        if not compare_digest(new_hash, bytes.fromhex(stored_hash_hex)):
+            return {'success': False, 'message': 'Login failed: Invalid username or password.'}
+
+        # 3. CONDITIONAL SELF-HEALING
+        # ONLY check for Player record if the user is actually a PLAYER.
+        # Admins are NOT supposed to be in the Player table in your architecture.
+        if role == 'PLAYER':
+            sql_check = "SELECT PlayerID FROM Player WHERE PlayerID = %s"
+            cursor.execute(sql_check, (user_id,))
+            if not cursor.fetchone():
+                print(f"Self-healed Player record for UserID {user_id}")
+                cursor.execute("INSERT INTO Player (PlayerID) VALUES (%s)", (user_id,))
+                conn.commit()
+
+        # 4. Return Success
+        return {
+            'success': True, 
+            'message': f"Welcome, {username}.", 
+            'player_id': user_id,
+            'role': role
+        }
+
     except Error as e:
         return {'success': False, 'message': f"Database error: {e}"}
     finally:
         cursor.close()
         conn.close()
+
+
 def get_all_users_for_admin():
     """Fetches list of all users and their basic aggregate stats."""
     conn = get_db_connection()
@@ -159,13 +166,18 @@ def get_all_users_for_admin():
     finally:
         cursor.close(); conn.close()
 
-def promote_user(target_user_id):
-    """Updates a user's role to ADMIN."""
+
+
+
+
+def ban_user(target_user_id):
+    """Deletes a user from the database completely."""
     conn = get_db_connection()
     if conn is None: return False
     cursor = conn.cursor()
     try:
-        sql = "UPDATE User SET Role = 'ADMIN' WHERE UserID = %s"
+        # ON DELETE CASCADE in your schema ensures Player/Game data is also deleted
+        sql = "DELETE FROM User WHERE UserID = %s"
         cursor.execute(sql, (target_user_id,))
         conn.commit()
         return True
@@ -174,6 +186,126 @@ def promote_user(target_user_id):
         return False
     finally:
         cursor.close(); conn.close()
+
+def promote_user(target_user_id):
+    """
+    Moves a user from PLAYER table to ADMIN table.
+    WARNING: Deleting from Player table will WIPE all game history/stats 
+    due to Foreign Key Cascades.
+    """
+    conn = get_db_connection()
+    if conn is None: return False
+    cursor = conn.cursor()
+    try:
+        conn.start_transaction()
+
+        # 1. Add to Admin Table
+        sql_add_admin = "INSERT IGNORE INTO Admin (AdminID) VALUES (%s)"
+        cursor.execute(sql_add_admin, (target_user_id,))
+
+        # 2. Update User Role Label
+        sql_update_role = "UPDATE User SET Role = 'ADMIN' WHERE UserID = %s"
+        cursor.execute(sql_update_role, (target_user_id,))
+
+        # 3. REMOVE from Player Table (Clean up)
+        # This prevents them from being in both tables.
+        sql_delete_player = "DELETE FROM Player WHERE PlayerID = %s"
+        cursor.execute(sql_delete_player, (target_user_id,))
+
+        conn.commit()
+        print(f"User {target_user_id} promoted to Admin (Player stats wiped).")
+        return True
+
+    except Error as e:
+        conn.rollback()
+        print(f"DB Error during promote: {e}")
+        return False
+    finally:
+        cursor.close(); conn.close()
+
+def revoke_admin(target_user_id):
+    """
+    Moves a user from ADMIN table to PLAYER table.
+    Forces Safe Updates OFF and ensures robust error handling.
+    """
+    # 1. Cast to INT to prevent any string/number mismatches
+    try:
+        t_id = int(target_user_id)
+    except ValueError:
+        print(f"[ERROR] Invalid User ID format: {target_user_id}")
+        return False
+
+    print(f"[DEBUG] Revoking Admin ID: {t_id}")
+    
+    conn = get_db_connection()
+    if conn is None: 
+        print("[DEBUG] DB Connection failed")
+        return False
+        
+    cursor = conn.cursor()
+    try:
+        # 2. DISABLE SAFE UPDATES for this session
+        cursor.execute("SET SQL_SAFE_UPDATES = 0;")
+        
+        conn.start_transaction()
+
+        # 3. Add to Player Table
+        # We use ON DUPLICATE KEY UPDATE as a safer alternative to INSERT IGNORE
+        # This ensures the record exists in Player table no matter what.
+        print(f"[DEBUG] Moving User {t_id} to Player Table...")
+        sql_ensure_player = """
+            INSERT INTO Player (PlayerID) VALUES (%s) 
+            ON DUPLICATE KEY UPDATE PlayerID = PlayerID
+        """
+        cursor.execute(sql_ensure_player, (t_id,))
+
+        # 4. Update Role in User Table
+        print(f"[DEBUG] Updating User Role to PLAYER...")
+        sql_update_role = "UPDATE User SET Role = 'PLAYER' WHERE UserID = %s"
+        cursor.execute(sql_update_role, (t_id,))
+
+        # 5. Remove from Admin Table
+        print(f"[DEBUG] Removing from Admin Table...")
+        sql_delete_admin = "DELETE FROM Admin WHERE AdminID = %s"
+        cursor.execute(sql_delete_admin, (t_id,))
+
+        conn.commit()
+        print(f"[SUCCESS] User {t_id} is now a Player.")
+        return True
+
+    except Error as e:
+        conn.rollback()
+        print(f"[CRITICAL DB ERROR] Revoke Failed: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_player_high_scores(player_id):
+    """Fetches the top 10 highest scores for a specific player."""
+    conn = get_db_connection()
+    if conn is None: return []
+    cursor = conn.cursor(dictionary=True)
+    try:
+        sql = """
+            SELECT gs.StartTime, dl.LevelName, gp.Score, gp.IsWinner
+            FROM GameParticipant gp
+            JOIN GameSession gs ON gs.GameSessionID = gp.GameSessionID
+            JOIN DifficultyLevel dl ON gs.DifficultyID = dl.DifficultyID
+            WHERE gp.PlayerID = %s
+            ORDER BY gp.Score DESC
+            LIMIT 10
+        """
+        cursor.execute(sql, (player_id,))
+        return cursor.fetchall()
+    except Error as e:
+        print(f"DB Error: {e}")
+        return []
+    finally:
+        cursor.close(); conn.close()
+
+
+
 def update_password(player_id, new_password):
     """
     Updates password in the USER table.
