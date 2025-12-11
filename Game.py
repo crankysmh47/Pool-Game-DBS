@@ -70,8 +70,8 @@ class NetworkClient:
 net = NetworkClient()
 
 # --- INITIALIZE NETWORK ---
-# net = DirectClient()  <-- DELETE OR COMMENT THIS LINE
-net = NetworkClient() # <-- ADD THIS LINE
+# net = DirectClient()
+net = NetworkClient() 
 
 # --- Pygame Setup ---
 pygame.init()
@@ -214,7 +214,7 @@ def draw_interactive_avatar(surface, x, y, size, state="idle", mouse_pos=(0,0)):
     pygame.draw.circle(surface, NEON_CYAN, (x, y), size, 3) # Thicker border
     
     # Eyes
-    eye_radius = size // 3.5 # Larger eyes
+    eye_radius = size // 3.5 
     eye_offset_x = size // 2.8
     eye_offset_y = size // 5
     
@@ -1365,7 +1365,7 @@ def main_game(player_id, username, difficulty_id):
                 pygame.draw.line(canvas, WHITE, (cue.x, cue.y), (aim_end_x, aim_end_y), 1)
 
                 # Power Meter
-                bar_w = 100; bar_h = 8 # Increased length
+                bar_w = 200; bar_h = 8 # Increased length
                 bar_x = cue.x - bar_w//2; bar_y = cue.y + 35
                 
                 # Background
@@ -1388,7 +1388,7 @@ def main_game(player_id, username, difficulty_id):
             draw_glass_panel(panel_rect, NEON_CYAN if did_win else NEON_MAGENTA)
             
             # POOL AD Branding
-            draw_text("POOL AD", achievement_font, GOLD, cx - achievement_font.size("POOL AD")[0] // 2, cy - 190)
+            draw_text("DOWNLOAD POOL GAME NOW", achievement_font, GOLD, cx - achievement_font.size("DOWNLOAD POOL GAME NOW")[0] // 2, cy - 190)
 
             msg = "MISSION ACCOMPLISHED" if did_win else ("TIME CRITICAL FAILURE" if countdown_finished else "MISSION FAILED")
             color = NEON_CYAN if did_win else NEON_MAGENTA

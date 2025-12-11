@@ -83,11 +83,10 @@ def register_player(username, password):
 
 
 
-# --- IN auth.py ---
 
 def login_player(username, password):
     if not username or not password:
-        return {'success': False, 'message': 'Username and password cannot be empty.'}
+        return {'success': False, 'message': 'Field Empty.'}
 
     conn = get_db_connection()
     if conn is None:
@@ -336,10 +335,7 @@ def update_password(player_id, new_password):
         conn.close()
 
 def get_top_scores():
-    """
-    UPDATED: Joins with User table to get the Username.
-    Player table no longer contains 'Username'.
-    """
+    
     conn = get_db_connection()
     if conn is None: return []
 
